@@ -104,13 +104,13 @@ export function CommandSearch({
               className="w-full max-w-[1600px] h-full max-h-[90vh] bg-[#0a0a0a]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
             >
               {/* HEADER SECTION */}
-              <div className="flex-none px-6 py-5 border-b border-white/10 bg-black/20">
-                <div className="flex justify-between items-start mb-6">
+              <div className="flex-none px-4 py-4 sm:px-6 sm:py-5 border-b border-white/10 bg-black/20">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6 mb-4 sm:mb-6">
                   <div>
-                    <h1 className="text-4xl font-light tracking-tight text-white mb-2">
+                    <h1 className="text-2xl sm:text-4xl font-light tracking-tight text-white mb-1 sm:mb-2">
                       Browse <span className="font-semibold text-white">Cameras</span>
                     </h1>
-                    <div className="flex items-center gap-6 text-sm font-mono text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] sm:text-sm font-mono text-muted-foreground">
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                         {cameras.length.toLocaleString()} Cameras Online
@@ -130,8 +130,8 @@ export function CommandSearch({
                 </div>
 
                 {/* SEARCH BAR & TOOLBAR */}
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 px-4 py-2 bg-secondary/30 border border-white/10 rounded-lg text-sm font-mono text-muted-foreground hover:text-white cursor-pointer transition-colors">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                  <div className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-secondary/30 border border-white/10 rounded-lg text-sm font-mono text-muted-foreground hover:text-white cursor-pointer transition-colors">
                     <Filter className="w-4 h-4" />
                     <span>Filters</span>
                   </div>
@@ -148,7 +148,7 @@ export function CommandSearch({
                     />
                   </div>
 
-                  <div className="flex items-center gap-1 bg-secondary/20 p-1 rounded-lg border border-white/5">
+                  <div className="self-end sm:self-auto flex items-center gap-1 bg-secondary/20 p-1 rounded-lg border border-white/5">
                     <button
                       onClick={() => setViewMode('grid')}
                       className={cn(
@@ -204,8 +204,8 @@ export function CommandSearch({
                 </div>
 
                 {/* RESULTS GRID */}
-                <div className="flex-1 overflow-y-auto p-6 md:p-8">
-                  <div className="mb-4 flex items-center justify-between">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-lg font-light text-white">
                       {selectedContinent} <span className="text-muted-foreground text-sm ml-2">{filteredCameras.length} results</span>
                     </h2>

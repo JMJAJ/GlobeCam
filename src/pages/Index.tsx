@@ -433,8 +433,8 @@ export default function Index() {
 
         {/* HUD Panels */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-y-24 left-6 right-6 flex justify-between gap-6">
-            <div className="pointer-events-auto w-[260px] max-w-[35vw] flex flex-col gap-4 max-h-[calc(100vh-140px)] overflow-y-auto">
+          <div className="pointer-events-none absolute left-3 right-3 top-20 bottom-28 sm:left-6 sm:right-6 sm:top-24 sm:bottom-24 flex flex-col md:flex-row md:justify-between gap-4 md:gap-6 overflow-y-auto md:overflow-visible">
+            <div className="pointer-events-auto w-full md:w-[260px] md:max-w-[35vw] flex flex-col gap-4 md:max-h-[calc(100vh-140px)] md:overflow-y-auto">
               <StatsDisplay
                 totalCameras={stats.total}
                 visibleCameras={filteredCameras.length}
@@ -453,7 +453,7 @@ export default function Index() {
               />
             </div>
 
-            <div className="pointer-events-auto w-[260px] max-w-[35vw] flex flex-col gap-4 max-h-[calc(100vh-140px)] overflow-y-auto">
+            <div className="pointer-events-auto w-full md:w-[260px] md:max-w-[35vw] flex flex-col gap-4 md:max-h-[calc(100vh-140px)] md:overflow-y-auto">
               <LiveActivityIndicator
                 online={stats.online}
                 total={stats.total}
@@ -474,7 +474,7 @@ export default function Index() {
                 <Sliders className="w-4 h-4" />
                 Settings
               </button>
-              <div className="mt-auto">
+              <div className="md:mt-auto">
                 <MiniMap rotation={currentRotation} />
               </div>
             </div>
@@ -526,8 +526,8 @@ export default function Index() {
           transition={{ duration: 0.6, delay: 0.8 }}
           className="absolute bottom-0 left-0 right-0 z-20"
         >
-          <div className="flex items-center justify-between px-6 py-3 border-t border-border/30 bg-background/50 backdrop-blur-sm">
-            <div className="flex items-center gap-6">
+          <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 border-t border-border/30 bg-background/50 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-6">
               <span className="font-mono text-[10px] text-white uppercase tracking-wider">
                 Lon: {currentRotation[0].toFixed(2)}° | Lat: {currentRotation[1].toFixed(2)}°
               </span>
@@ -535,7 +535,7 @@ export default function Index() {
                 View: {currentProgress === 100 ? 'Flat Map' : currentProgress === 0 ? 'Globe' : 'Transitioning'}
               </span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <span className="font-mono text-[10px] text-white uppercase tracking-wider">
                 Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}
               </span>

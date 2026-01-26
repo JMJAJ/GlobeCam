@@ -72,7 +72,7 @@ export function SettingsPanel({
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="pointer-events-auto w-full max-w-md"
             >
-              <div className="hud-panel hud-panel-glow corner-accents p-5">
+              <div className="hud-panel hud-panel-glow corner-accents p-5 max-h-[85vh] overflow-y-auto sm:max-h-none">
                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
                   <div className="flex items-center gap-2">
                     <Sliders className="w-4 h-4 text-muted-foreground" />

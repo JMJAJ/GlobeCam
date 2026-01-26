@@ -28,7 +28,7 @@ export function StatsDisplay({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.3 }}
-            className="font-mono text-4xl font-medium text-white text-glow"
+            className="font-mono text-3xl sm:text-4xl font-medium text-white text-glow"
           >
             {totalCameras.toLocaleString()}
           </motion.span>
