@@ -278,6 +278,7 @@ export default function Index() {
   }, []);
 
   const stats = useMemo(() => getCameraStats(allCameras), [allCameras]);
+  const maxVisibleNodesMax = Math.max(500, Math.min(5000, allCameras.length));
 
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<CameraData | null>(null);
@@ -291,6 +292,12 @@ export default function Index() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
   const [autoRotateSpeed, setAutoRotateSpeed] = useState(1.25);
+  const [maxVisibleNodes, setMaxVisibleNodes] = useState(() => Math.min(1200, maxVisibleNodesMax));
+  const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>('outline');
+  const [showOsmTiles, setShowOsmTiles] = useState(true);
+  const [markerSize, setMarkerSize] = useState(1);
+  const [showClusterLabels, setShowClusterLabels] = useState(true);
+  const [glowIntensity, setGlowIntensity] = useState(1);
 
   // Get unique manufacturers
   const manufacturers = useMemo(() => {
@@ -413,6 +420,13 @@ export default function Index() {
               onProgressChange={setCurrentProgress}
               autoRotateEnabled={autoRotateEnabled}
               autoRotateSpeed={autoRotateSpeed}
+              maxVisibleNodes={maxVisibleNodes}
+              mapVariant={mapVariant}
+              onMapVariantChange={setMapVariant}
+              showOsmTiles={showOsmTiles}
+              markerSize={markerSize}
+              showClusterLabels={showClusterLabels}
+              glowIntensity={glowIntensity}
             />
           </motion.div>
         </div>
@@ -482,9 +496,22 @@ export default function Index() {
           isOpen={isSettingsOpen}
           autoRotateEnabled={autoRotateEnabled}
           autoRotateSpeed={autoRotateSpeed}
+          maxVisibleNodes={maxVisibleNodes}
+          maxVisibleNodesMax={maxVisibleNodesMax}
+          mapVariant={mapVariant}
+          showOsmTiles={showOsmTiles}
+          markerSize={markerSize}
+          showClusterLabels={showClusterLabels}
+          glowIntensity={glowIntensity}
           onClose={handleSettingsClose}
           onAutoRotateEnabledChange={setAutoRotateEnabled}
           onAutoRotateSpeedChange={setAutoRotateSpeed}
+          onMaxVisibleNodesChange={(value) => setMaxVisibleNodes(Math.round(value))}
+          onMapVariantChange={setMapVariant}
+          onShowOsmTilesChange={setShowOsmTiles}
+          onMarkerSizeChange={setMarkerSize}
+          onShowClusterLabelsChange={setShowClusterLabels}
+          onGlowIntensityChange={setGlowIntensity}
         />
 
         {/* Overlays */}
