@@ -14,6 +14,13 @@ interface GlobeVisualizationProps {
   onProgressChange?: (progress: number) => void;
   autoRotateEnabled?: boolean;
   autoRotateSpeed?: number;
+  maxVisibleNodes?: number;
+  mapVariant?: 'outline' | 'openstreetmap';
+  onMapVariantChange?: (variant: 'outline' | 'openstreetmap') => void;
+  showOsmTiles?: boolean;
+  markerSize?: number;
+  showClusterLabels?: boolean;
+  glowIntensity?: number;
 }
 
 const MIN_ZOOM = 0.5;
@@ -43,6 +50,13 @@ export function GlobeVisualization({
   onProgressChange,
   autoRotateEnabled = false,
   autoRotateSpeed = 1.25,
+  maxVisibleNodes = Number.POSITIVE_INFINITY,
+  mapVariant: mapVariantProp = 'outline',
+  onMapVariantChange,
+  showOsmTiles = true,
+  markerSize = 1,
+  showClusterLabels = true,
+  glowIntensity = 1,
 }: GlobeVisualizationProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -57,7 +71,7 @@ export function GlobeVisualization({
   const [worldData, setWorldData] = useState<GeoFeature[]>([]);
   const [rotation, setRotation] = useState<[number, number]>([0, 0]);
   const [zoom, setZoom] = useState(1);
-  const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>('outline');
+  const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>(mapVariantProp);
   const [isDragging, setIsDragging] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -84,6 +98,10 @@ export function GlobeVisualization({
   const hoverRafRef = useRef<number | null>(null);
   const hoverPendingMouseRef = useRef<[number, number] | null>(null);
   const hoveredClusterRef = useRef<CameraCluster | null>(null);
+
+  useEffect(() => {
+    setMapVariant(mapVariantProp);
+  }, [mapVariantProp]);
 
   // Create projection helper
   const createProjection = useCallback((width: number, height: number) => {
@@ -174,11 +192,16 @@ export function GlobeVisualization({
   // Calculate clusters for the whole world based on zoom level (independent of viewport)
   // This ensures clusters don't move/jitter when panning the map
   const worldClusters = useMemo(() => {
-    // Grid size in degrees. larger = fewer clusters.
-    // At zoom 1 -> 30 deg. At zoom 4 -> ~7 deg.
-    const cellSize = 30 / Math.max(0.5, stableZoom);
-    return buildGridClusters(cameras, cellSize);
-  }, [cameras, stableZoom]);
+    if (!Number.isFinite(maxVisibleNodes) || maxVisibleNodes <= 0) {
+      // Grid size in degrees. larger = fewer clusters.
+      // At zoom 1 -> 30 deg. At zoom 4 -> ~7 deg.
+      const cellSize = 30 / Math.max(0.5, stableZoom);
+      return buildGridClusters(cameras, cellSize);
+    }
+
+    const maxNodes = Math.max(1, Math.round(maxVisibleNodes));
+    return clusterCamerasToMax(cameras, { maxClusters: maxNodes, zoom: stableZoom });
+  }, [cameras, stableZoom, maxVisibleNodes]);
 
   const visibleClusters = useMemo(() => {
     if (!projection) return [] as Array<{ cluster: CameraCluster; x: number; y: number }>;
@@ -221,8 +244,17 @@ export function GlobeVisualization({
       result.push({ cluster, x, y });
     }
 
+    if (Number.isFinite(maxVisibleNodes) && maxVisibleNodes > 0) {
+      const maxNodes = Math.max(1, Math.round(maxVisibleNodes));
+      if (result.length > maxNodes) {
+        return [...result]
+          .sort((a, b) => b.cluster.count - a.cluster.count)
+          .slice(0, maxNodes);
+      }
+    }
+
     return result;
-  }, [worldClusters, projection, rotationCenter, progress, dimensions.width, dimensions.height]);
+  }, [worldClusters, projection, rotationCenter, progress, dimensions.width, dimensions.height, maxVisibleNodes]);
 
   // Notify parent of rotation changes
   useEffect(() => {
@@ -744,6 +776,10 @@ export function GlobeVisualization({
         return;
       }
 
+      if (!showOsmTiles) {
+        return;
+      }
+
       // OSM Tile Rendering (Mercator)
       // 1. Calculate Zoom Level
       const projectionScale = (projection as d3.GeoProjection).scale();
@@ -905,7 +941,7 @@ export function GlobeVisualization({
     // The original code was:
     // 642:    if (mapVariant !== 'satellite' || !textureReady) return;
     // ...
-    // 756:  }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging, isZooming]);
+    // 756:  }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging, isZooming, showOsmTiles]);
 
     // My replacement replaces from 642.
     // I'll paste the original globe rendering logic (which is fine to keep, it just won't trigger).
@@ -1014,23 +1050,31 @@ export function GlobeVisualization({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
+    const markerScale = Math.max(0.4, markerSize);
+    const glowScale = Math.max(0, glowIntensity);
+    const glowAlphaStrong = Math.min(1, 0.4 * glowScale);
+    const glowAlphaMid = Math.min(1, 0.12 * glowScale);
+
     // Draw clusters/cameras
     visibleClusters.forEach(({ cluster, x, y }) => {
       const isHovered = hoveredCluster?.id === cluster.id;
       // Logarithmic scaling for radius: visibly larger for more items, but capped
       const baseRadius = cluster.count === 1 ? 3 : Math.min(10 + Math.log10(cluster.count) * 3, 25);
-      const radius = (isHovered ? baseRadius * 1.2 : baseRadius) * Math.min(zoom, 1.5);
+      const scaledBase = baseRadius * markerScale;
+      const radius = (isHovered ? scaledBase * 1.2 : scaledBase) * Math.min(zoom, 1.5);
 
-      // Outer glow
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius * 3);
-      gradient.addColorStop(0, 'rgba(255, 248, 220, 0.4)');
-      gradient.addColorStop(0.5, 'rgba(255, 248, 220, 0.1)');
-      gradient.addColorStop(1, 'rgba(255, 248, 220, 0)');
+      if (glowScale > 0.02) {
+        const glowRadius = radius * 3 * glowScale;
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+        gradient.addColorStop(0, `rgba(255, 248, 220, ${glowAlphaStrong})`);
+        gradient.addColorStop(0.5, `rgba(255, 248, 220, ${glowAlphaMid})`);
+        gradient.addColorStop(1, 'rgba(255, 248, 220, 0)');
 
-      ctx.beginPath();
-      ctx.arc(x, y, radius * 3, 0, Math.PI * 2);
-      ctx.fillStyle = gradient;
-      ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
 
       // Core marker
       ctx.beginPath();
@@ -1040,7 +1084,7 @@ export function GlobeVisualization({
 
       // Cluster count
       // Cluster count - show exact count
-      if (cluster.count > 1 && radius > 8) {
+      if (showClusterLabels && cluster.count > 1 && radius > 8) {
         // Adjust font size to fit inside circle
         const fontSize = Math.min(radius * 0.9, 12);
         ctx.font = `600 ${fontSize}px JetBrains Mono`;
@@ -1051,7 +1095,7 @@ export function GlobeVisualization({
       }
     });
 
-  }, [visibleClusters, dimensions, hoveredCluster, worldData, projection, zoom]);
+  }, [visibleClusters, dimensions, hoveredCluster, worldData, projection, zoom, markerSize, showClusterLabels, glowIntensity]);
 
   // Handle canvas mouse events
   const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1075,9 +1119,10 @@ export function GlobeVisualization({
         }
 
         let found: CameraCluster | null = null;
+        const markerScale = Math.max(0.4, markerSize);
         for (const { cluster, x: cx, y: cy } of visibleClusters) {
           const baseRadius = cluster.count === 1 ? 3 : Math.min(10 + Math.log10(cluster.count) * 3, 25);
-          const radius = baseRadius * Math.min(zoom, 1.5) * 1.2; // Use hovered size for hit test tolerance
+          const radius = baseRadius * Math.min(zoom, 1.5) * markerScale * 1.2; // Use hovered size for hit test tolerance
           if (Math.hypot(pending[0] - cx, pending[1] - cy) < radius) {
             found = cluster;
             break;
@@ -1098,7 +1143,7 @@ export function GlobeVisualization({
         hoverRafRef.current = null;
       });
     }
-  }, [visibleClusters, onClusterSelect, zoom]);
+  }, [visibleClusters, onClusterSelect, zoom, markerSize]);
 
   const handleCanvasMouseLeave = useCallback(() => {
     hoverPendingMouseRef.current = null;
@@ -1125,9 +1170,10 @@ export function GlobeVisualization({
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     // Find clicked cluster
+    const markerScale = Math.max(0.4, markerSize);
     for (const { cluster, x: cx, y: cy } of visibleClusters) {
       const baseRadius = cluster.count === 1 ? 3 : Math.min(10 + Math.log10(cluster.count) * 3, 25);
-      const radius = baseRadius * Math.min(zoom, 1.5) * 1.2;
+      const radius = baseRadius * Math.min(zoom, 1.5) * markerScale * 1.2;
 
       if (Math.hypot(x - cx, y - cy) < radius) {
         const targetRotation: [number, number] = [
@@ -1149,7 +1195,7 @@ export function GlobeVisualization({
         break;
       }
     }
-  }, [visibleClusters, zoom, onCameraSelect, animateViewTo]);
+  }, [visibleClusters, zoom, onCameraSelect, animateViewTo, markerSize]);
 
   const handleAnimate = useCallback(() => {
     if (isAnimating) return;
@@ -1177,6 +1223,11 @@ export function GlobeVisualization({
 
     animate();
   }, [isAnimating, progress]);
+
+  const handleMapVariantSelect = useCallback((variant: 'outline' | 'openstreetmap') => {
+    setMapVariant(variant);
+    onMapVariantChange?.(variant);
+  }, [onMapVariantChange]);
 
   return (
     <div
@@ -1288,13 +1339,13 @@ export function GlobeVisualization({
 
         <div className="hud-panel corner-accents flex items-center gap-1 p-1">
           <button
-            onClick={() => setMapVariant('outline')}
+            onClick={() => handleMapVariantSelect('outline')}
             className={`px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'outline' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             Outline
           </button>
           <button
-            onClick={() => setMapVariant('openstreetmap')}
+            onClick={() => handleMapVariantSelect('openstreetmap')}
             className={`px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'openstreetmap' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             OpenStreetMap
