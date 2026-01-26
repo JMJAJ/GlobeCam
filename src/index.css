@@ -1,0 +1,304 @@
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Futuristic Command Center Design System */
+
+@layer base {
+  :root {
+    /* Core palette - Deep space black */
+    --background: 0 0% 2%;
+    --foreground: 0 0% 100%;
+
+    /* Surface layers */
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
+
+    /* Accent - Subtle warm glow */
+    --primary: 45 10% 85%;
+    --primary-foreground: 0 0% 2%;
+
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 0 0% 75%;
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 50%;
+
+    --accent: 45 15% 75%;
+    --accent-foreground: 0 0% 2%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* UI elements */
+    --border: 0 0% 15%;
+    --input: 0 0% 10%;
+    --ring: 45 10% 50%;
+
+    --radius: 0.25rem;
+
+    /* Custom tokens */
+    --glow: 45 20% 70%;
+    --grid: 0 0% 8%;
+    --scan-line: 0 0% 100%;
+    --marker-pulse: 45 30% 60%;
+    --panel-bg: 0 0% 3% / 0.85;
+    --panel-border: 0 0% 20%;
+    --hud-accent: 45 15% 65%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    overflow: hidden;
+    text-rendering: optimizeLegibility;
+    height: 100%;
+    margin: 0;
+    width: 100%;
+  }
+
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Technical / monospace text */
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: "liga" 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Ensure crisp text rendering everywhere */
+  * {
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom Animations */
+@layer utilities {
+  /* Scan line effect */
+  .scan-lines {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(var(--scan-line) / 0.02) 2px,
+      hsl(var(--scan-line) / 0.02) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* Grid overlay */
+  .grid-overlay {
+    background-image: 
+      linear-gradient(hsl(var(--grid)) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--grid)) 1px, transparent 1px);
+    background-size: 50px 50px;
+    opacity: 0.3;
+  }
+
+  /* Radial grid */
+  .radial-grid {
+    background: 
+      radial-gradient(circle at center, transparent 0%, transparent 30%, hsl(var(--grid) / 0.3) 30.5%, transparent 31%),
+      radial-gradient(circle at center, transparent 0%, transparent 50%, hsl(var(--grid) / 0.2) 50.5%, transparent 51%),
+      radial-gradient(circle at center, transparent 0%, transparent 70%, hsl(var(--grid) / 0.15) 70.5%, transparent 71%);
+  }
+
+  /* Glow effects */
+  .glow-sm {
+    box-shadow: 0 0 10px hsl(var(--glow) / 0.2);
+  }
+
+  .glow-md {
+    box-shadow: 0 0 20px hsl(var(--glow) / 0.3);
+  }
+
+  .glow-lg {
+    box-shadow: 0 0 40px hsl(var(--glow) / 0.4);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px hsl(var(--glow) / 0.5);
+  }
+
+  /* Panel styling */
+  .hud-panel {
+    background: hsl(var(--panel-bg));
+    border: 1px solid hsl(var(--panel-border));
+    backdrop-filter: blur(12px);
+  }
+
+  .hud-panel-glow {
+    box-shadow: 
+      0 0 30px hsl(var(--glow) / 0.1),
+      inset 0 1px 0 hsl(var(--foreground) / 0.05);
+  }
+
+  /* Corner accents for panels */
+  .corner-accents {
+    position: relative;
+  }
+
+  .corner-accents::before,
+  .corner-accents::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-color: hsl(var(--hud-accent));
+    pointer-events: none;
+  }
+
+  .corner-accents::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+
+  .corner-accents::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 1px solid;
+    border-right: 1px solid;
+  }
+}
+
+/* Keyframe animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float-subtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes border-pulse {
+  0%, 100% {
+    border-color: hsl(var(--border));
+  }
+  50% {
+    border-color: hsl(var(--hud-accent));
+  }
+}
+
+@keyframes data-stream {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 0% 100%;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .animate-radar-sweep {
+    animation: radar-sweep 8s linear infinite;
+  }
+
+  .animate-float-subtle {
+    animation: float-subtle 4s ease-in-out infinite;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.6s ease-out forwards;
+  }
+
+  .animate-border-pulse {
+    animation: border-pulse 3s ease-in-out infinite;
+  }
+
+  .animate-data-stream {
+    animation: data-stream 20s linear infinite;
+  }
+
+  /* Staggered delays */
+  .delay-100 { animation-delay: 100ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-400 { animation-delay: 400ms; }
+  .delay-500 { animation-delay: 500ms; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
