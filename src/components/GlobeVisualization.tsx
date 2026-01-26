@@ -92,6 +92,8 @@ export function GlobeVisualization({
   const autoRotateLastTimeRef = useRef<number | null>(null);
   const dragPendingMouseRef = useRef<[number, number] | null>(null);
   const lastMouseRef = useRef<[number, number]>([0, 0]);
+  const lastPinchDistanceRef = useRef<number | null>(null);
+  const lastPinchCenterRef = useRef<[number, number] | null>(null);
   const isDraggingRef = useRef(false);
   const dragDistanceRef = useRef(0);
   const DRAG_THRESHOLD = 5;
@@ -468,52 +470,52 @@ export function GlobeVisualization({
     }
   }, []);
 
+  const scheduleDrag = useCallback((currentMouse: [number, number]) => {
+    if (!isDraggingRef.current) return;
+    dragPendingMouseRef.current = currentMouse;
+    if (dragRafRef.current === null) {
+      dragRafRef.current = requestAnimationFrame(() => {
+        const pending = dragPendingMouseRef.current;
+        if (!pending) {
+          dragRafRef.current = null;
+          return;
+        }
+        const [lastX, lastY] = lastMouseRef.current;
+        const dx = pending[0] - lastX;
+        const dy = pending[1] - lastY;
+
+        // Track drag distance for click vs drag detection
+        dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
+
+        const isFullMapMode = progress >= 100;
+
+        if (isFullMapMode) {
+          // Full flat map mode: direct offset panning (like Google Maps)
+          setMapOffset(prev => [
+            prev[0] + dx,
+            prev[1] + dy
+          ]);
+        } else {
+          // Globe or transitioning mode: rotation-based movement
+          const sensitivity = (progress < 50 ? 0.5 : 0.25) / zoom;
+          setRotation(prev => [
+            prev[0] + dx * sensitivity,
+            Math.max(-90, Math.min(90, prev[1] - dy * sensitivity))
+          ]);
+        }
+
+        lastMouseRef.current = pending;
+        dragPendingMouseRef.current = null;
+        dragRafRef.current = null;
+      });
+    }
+  }, [progress, zoom]);
+
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-
-    const currentMouse: [number, number] = [event.clientX - rect.left, event.clientY - rect.top];
-
-    if (isDraggingRef.current) {
-      dragPendingMouseRef.current = currentMouse;
-      if (dragRafRef.current === null) {
-        dragRafRef.current = requestAnimationFrame(() => {
-          const pending = dragPendingMouseRef.current;
-          if (!pending) {
-            dragRafRef.current = null;
-            return;
-          }
-          const [lastX, lastY] = lastMouseRef.current;
-          const dx = pending[0] - lastX;
-          const dy = pending[1] - lastY;
-
-          // Track drag distance for click vs drag detection
-          dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
-
-          const isFullMapMode = progress >= 100;
-
-          if (isFullMapMode) {
-            // Full flat map mode: direct offset panning (like Google Maps)
-            setMapOffset(prev => [
-              prev[0] + dx,
-              prev[1] + dy
-            ]);
-          } else {
-            // Globe or transitioning mode: rotation-based movement
-            const sensitivity = (progress < 50 ? 0.5 : 0.25) / zoom;
-            setRotation(prev => [
-              prev[0] + dx * sensitivity,
-              Math.max(-90, Math.min(90, prev[1] - dy * sensitivity))
-            ]);
-          }
-
-          lastMouseRef.current = pending;
-          dragPendingMouseRef.current = null;
-          dragRafRef.current = null;
-        });
-      }
-    }
-  }, [progress, zoom, rotation]);
+    scheduleDrag([event.clientX - rect.left, event.clientY - rect.top]);
+  }, [scheduleDrag]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -524,6 +526,122 @@ export function GlobeVisualization({
       dragRafRef.current = null;
     }
   }, []);
+
+  const handleTouchStart = useCallback((event: React.TouchEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      setIsDragging(true);
+      isDraggingRef.current = true;
+      dragDistanceRef.current = 0;
+      lastMouseRef.current = [touch.clientX - rect.left, touch.clientY - rect.top];
+      lastPinchDistanceRef.current = null;
+      lastPinchCenterRef.current = null;
+      return;
+    }
+
+    if (event.touches.length === 2) {
+      const touchA = event.touches[0];
+      const touchB = event.touches[1];
+      const center: [number, number] = [
+        (touchA.clientX + touchB.clientX) / 2 - rect.left,
+        (touchA.clientY + touchB.clientY) / 2 - rect.top,
+      ];
+      setIsDragging(true);
+      isDraggingRef.current = true;
+      dragDistanceRef.current = 0;
+      lastMouseRef.current = center;
+      lastPinchCenterRef.current = center;
+      lastPinchDistanceRef.current = Math.hypot(
+        touchA.clientX - touchB.clientX,
+        touchA.clientY - touchB.clientY,
+      );
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((event: React.TouchEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      scheduleDrag([touch.clientX - rect.left, touch.clientY - rect.top]);
+      lastPinchDistanceRef.current = null;
+      lastPinchCenterRef.current = null;
+      return;
+    }
+
+    if (event.touches.length !== 2) return;
+
+    const touchA = event.touches[0];
+    const touchB = event.touches[1];
+    const center: [number, number] = [
+      (touchA.clientX + touchB.clientX) / 2 - rect.left,
+      (touchA.clientY + touchB.clientY) / 2 - rect.top,
+    ];
+    scheduleDrag(center);
+
+    const distance = Math.hypot(touchA.clientX - touchB.clientX, touchA.clientY - touchB.clientY);
+    if (lastPinchDistanceRef.current !== null) {
+      const scale = distance / lastPinchDistanceRef.current;
+      if (Number.isFinite(scale) && scale !== 0) {
+        const newZoom = Math.max(MIN_ZOOM, zoom * scale);
+        if (newZoom !== zoom) {
+          if (zoomingTimeoutRef.current !== null) {
+            window.clearTimeout(zoomingTimeoutRef.current);
+          }
+          setIsZooming(true);
+          zoomingTimeoutRef.current = window.setTimeout(() => {
+            setIsZooming(false);
+            zoomingTimeoutRef.current = null;
+          }, 150);
+
+          const isFullMapMode = progress >= 100;
+          if (isFullMapMode) {
+            const centerX = dimensions.width / 2;
+            const centerY = dimensions.height / 2;
+            const pointX = center[0] - centerX - mapOffset[0];
+            const pointY = center[1] - centerY - mapOffset[1];
+            const scaleFactor = newZoom / zoom;
+            setMapOffset([
+              mapOffset[0] - pointX * (scaleFactor - 1),
+              mapOffset[1] - pointY * (scaleFactor - 1),
+            ]);
+          }
+
+          setZoom(newZoom);
+        }
+      }
+    }
+
+    lastPinchDistanceRef.current = distance;
+    lastPinchCenterRef.current = center;
+  }, [scheduleDrag, zoom, progress, dimensions.width, dimensions.height, mapOffset]);
+
+  const handleTouchEnd = useCallback((event: React.TouchEvent) => {
+    if (event.touches.length === 0) {
+      lastPinchDistanceRef.current = null;
+      lastPinchCenterRef.current = null;
+      handleMouseUp();
+      return;
+    }
+
+    if (event.touches.length === 1) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const touch = event.touches[0];
+        lastMouseRef.current = [touch.clientX - rect.left, touch.clientY - rect.top];
+      }
+      dragPendingMouseRef.current = null;
+      dragDistanceRef.current = 0;
+      setIsDragging(true);
+      isDraggingRef.current = true;
+      lastPinchDistanceRef.current = null;
+      lastPinchCenterRef.current = null;
+    }
+  }, [handleMouseUp]);
 
   const normalizeAngle = useCallback((angle: number) => {
     const wrapped = ((angle + 180) % 360 + 360) % 360 - 180;
@@ -1232,12 +1350,16 @@ export function GlobeVisualization({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full cursor-grab active:cursor-grabbing"
+      className="relative w-full h-full cursor-grab active:cursor-grabbing touch-none"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       {/* Base texture canvas */}
       <canvas
@@ -1258,7 +1380,7 @@ export function GlobeVisualization({
       {/* Canvas for camera markers */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 pointer-events-auto"
+        className="absolute inset-0 pointer-events-auto touch-none"
         style={{ width: '100%', height: '100%' }}
         onMouseMove={handleCanvasMouseMove}
         onMouseLeave={handleCanvasMouseLeave}
@@ -1266,7 +1388,7 @@ export function GlobeVisualization({
       />
 
       {/* Zoom Controls */}
-      <div className="absolute right-6 top-1/2 -translate-y-1/2 z-10">
+      <div className="absolute right-3 top-24 translate-y-0 z-10 sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
         <ZoomControls
           zoom={zoom}
           minZoom={MIN_ZOOM}
@@ -1328,25 +1450,25 @@ export function GlobeVisualization({
       </AnimatePresence>
 
       {/* Bottom controls */}
-      <div className="absolute bottom-10 right-6 flex items-center gap-3 z-10">
+      <div className="absolute bottom-20 left-3 right-3 flex flex-col gap-2 z-10 sm:bottom-10 sm:left-auto sm:right-6 sm:flex-row sm:items-center sm:gap-3">
         <button
           onClick={handleAnimate}
           disabled={isAnimating}
-          className="hud-panel corner-accents px-4 py-2 font-mono text-xs uppercase tracking-wider text-white hover:bg-secondary/50 transition-colors disabled:opacity-50"
+          className="hud-panel corner-accents w-full sm:w-auto px-4 py-2 font-mono text-xs uppercase tracking-wider text-white hover:bg-secondary/50 transition-colors disabled:opacity-50"
         >
           {isAnimating ? "Morphing..." : progress === 100 ? "View as Globe" : "View as Map"}
         </button>
 
-        <div className="hud-panel corner-accents flex items-center gap-1 p-1">
+        <div className="hud-panel corner-accents w-full sm:w-auto flex items-center gap-1 p-1">
           <button
             onClick={() => handleMapVariantSelect('outline')}
-            className={`px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'outline' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
+            className={`flex-1 sm:flex-none px-3 py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'outline' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             Outline
           </button>
           <button
             onClick={() => handleMapVariantSelect('openstreetmap')}
-            className={`px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'openstreetmap' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
+            className={`flex-1 sm:flex-none px-3 py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'openstreetmap' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             OpenStreetMap
           </button>
@@ -1354,7 +1476,7 @@ export function GlobeVisualization({
       </div>
 
       {/* Zoom level indicator */}
-      <div className="absolute bottom-10 left-6 z-10">
+      <div className="absolute bottom-20 left-3 z-10 sm:bottom-10 sm:left-6">
         <div className="hud-panel px-3 py-1.5">
           <span className="font-mono text-[10px] uppercase tracking-wider text-white/80">
             Zoom: {zoom.toFixed(2)}x
