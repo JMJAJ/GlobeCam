@@ -10,6 +10,7 @@ import { CommandSearch } from '@/components/CommandSearch';
 import { CameraDetailModal } from '@/components/CameraDetailModal';
 import { QuickFilters } from '@/components/QuickFilters';
 import { MiniMap } from '@/components/MiniMap';
+import { SettingsPanel } from '@/components/SettingsPanel';
 import {
   ScanLinesOverlay,
   GridOverlay,
@@ -19,7 +20,7 @@ import {
 } from '@/components/VisualOverlays';
 import cameraDataRaw from '@/data/camera_data.json';
 import { CameraData } from '@/types/camera';
-import { Search } from 'lucide-react';
+import { Search, Sliders } from 'lucide-react';
 
 // Helper function to determine continent from country
 function getContinent(country: string): string {
@@ -262,7 +263,7 @@ function getCameraStats(cameras: CameraData[]) {
 export default function Index() {
   // Load and process cameras from JSON
   const allCameras = useMemo(() => {
-    return cameraDataRaw.map((cam: any, index: number) => ({
+    return (cameraDataRaw as any[]).map((cam: any, index: number) => ({
       id: `cam-${String(index).padStart(5, '0')}`,
       latitude: cam.latitude,
       longitude: cam.longitude,
@@ -287,6 +288,9 @@ export default function Index() {
   const [isConnected, setIsConnected] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
+  const [autoRotateSpeed, setAutoRotateSpeed] = useState(1.25);
 
   // Get unique manufacturers
   const manufacturers = useMemo(() => {
@@ -372,6 +376,14 @@ export default function Index() {
     setIsSearchOpen(false);
   }, []);
 
+  const handleSettingsOpen = useCallback(() => {
+    setIsSettingsOpen(true);
+  }, []);
+
+  const handleSettingsClose = useCallback(() => {
+    setIsSettingsOpen(false);
+  }, []);
+
   const handleSearchRegion = useCallback((region: string) => {
     setSearchQuery(region);
   }, []);
@@ -399,6 +411,8 @@ export default function Index() {
               onCameraSelect={handleCameraSelect}
               onRotationChange={setCurrentRotation}
               onProgressChange={setCurrentProgress}
+              autoRotateEnabled={autoRotateEnabled}
+              autoRotateSpeed={autoRotateSpeed}
             />
           </motion.div>
         </div>
@@ -438,6 +452,14 @@ export default function Index() {
                 <Search className="w-4 h-4" />
                 Browse Cameras
               </button>
+              <button
+                type="button"
+                onClick={handleSettingsOpen}
+                className="hud-panel corner-accents flex items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              >
+                <Sliders className="w-4 h-4" />
+                Settings
+              </button>
               <div className="mt-auto">
                 <MiniMap rotation={currentRotation} />
               </div>
@@ -454,6 +476,15 @@ export default function Index() {
             handleSearch('');
           }}
           onSelectRegion={handleSearchRegion}
+        />
+
+        <SettingsPanel
+          isOpen={isSettingsOpen}
+          autoRotateEnabled={autoRotateEnabled}
+          autoRotateSpeed={autoRotateSpeed}
+          onClose={handleSettingsClose}
+          onAutoRotateEnabledChange={setAutoRotateEnabled}
+          onAutoRotateSpeedChange={setAutoRotateSpeed}
         />
 
         {/* Overlays */}
