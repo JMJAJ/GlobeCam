@@ -285,7 +285,6 @@ export default function Index() {
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>([]);
   const [currentRotation, setCurrentRotation] = useState<[number, number]>([0, 0]);
   const [currentProgress, setCurrentProgress] = useState(100);
-  const [fps, setFps] = useState(60);
   const [isConnected, setIsConnected] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -296,8 +295,12 @@ export default function Index() {
   const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>('outline');
   const [showOsmTiles, setShowOsmTiles] = useState(true);
   const [markerSize, setMarkerSize] = useState(1);
+  const [showDayNight, setShowDayNight] = useState(true);
+  const [showSun, setShowSun] = useState(true);
+  const [showCloudLayer, setShowCloudLayer] = useState(true);
+  const [showWeatherLayer, setShowWeatherLayer] = useState(false);
   const [showClusterLabels, setShowClusterLabels] = useState(true);
-  const [glowIntensity, setGlowIntensity] = useState(1);
+  const [glowIntensity, setGlowIntensity] = useState(1.2);
 
   // Get unique manufacturers
   const manufacturers = useMemo(() => {
@@ -427,6 +430,10 @@ export default function Index() {
               markerSize={markerSize}
               showClusterLabels={showClusterLabels}
               glowIntensity={glowIntensity}
+              showDayNight={showDayNight}
+              showSun={showSun}
+              showCloudLayer={showCloudLayer}
+              showWeatherLayer={showWeatherLayer}
             />
           </motion.div>
         </div>
@@ -503,6 +510,10 @@ export default function Index() {
           markerSize={markerSize}
           showClusterLabels={showClusterLabels}
           glowIntensity={glowIntensity}
+          showDayNight={showDayNight}
+          showSun={showSun}
+          showCloudLayer={showCloudLayer}
+          showWeatherLayer={showWeatherLayer}
           onClose={handleSettingsClose}
           onAutoRotateEnabledChange={setAutoRotateEnabled}
           onAutoRotateSpeedChange={setAutoRotateSpeed}
@@ -512,6 +523,10 @@ export default function Index() {
           onMarkerSizeChange={setMarkerSize}
           onShowClusterLabelsChange={setShowClusterLabels}
           onGlowIntensityChange={setGlowIntensity}
+          onShowDayNightChange={setShowDayNight}
+          onShowSunChange={setShowSun}
+          onShowCloudLayerChange={setShowCloudLayer}
+          onShowWeatherLayerChange={setShowWeatherLayer}
         />
 
         {/* Overlays */}

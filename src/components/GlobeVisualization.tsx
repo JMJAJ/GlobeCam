@@ -21,12 +21,63 @@ interface GlobeVisualizationProps {
   markerSize?: number;
   showClusterLabels?: boolean;
   glowIntensity?: number;
+  showDayNight?: boolean;
+  showSun?: boolean;
+  showCloudLayer?: boolean;
+  showWeatherLayer?: boolean;
 }
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = Number.POSITIVE_INFINITY;
 const ZOOM_FACTOR = 1.15;
-const MAP_TEXTURE_URL = "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg";
+const TILE_CACHE_MAX = 512;
+const OVERLAY_TILE_CACHE_MAX = 256;
+const GIBS_BASE_URL = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best";
+const GIBS_WMS_BASE = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi";
+const GIBS_WMS_WIDTH = 2048;
+const GIBS_WMS_HEIGHT = 1024;
+const GIBS_TILE_MATRIX = "GoogleMapsCompatible_Level6";
+const CLOUD_LAYER = "MODIS_Terra_Cloud_Top_Temp_Day";
+const WEATHER_LAYER = "IMERG_Precipitation_Rate";
+
+function formatGibsDate(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDayOfYear(date: Date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const now = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.floor((now - start) / 86400000);
+}
+
+function getSunPosition(date: Date) {
+  const dayOfYear = getDayOfYear(date);
+  const declination = 23.44 * Math.sin((2 * Math.PI / 365) * (dayOfYear - 81));
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  let longitude = 180 - utcHours * 15;
+  longitude = ((longitude + 180) % 360 + 360) % 360 - 180;
+  return { longitude, latitude: declination };
+}
+
+function inferTextureUsesAlpha(imageData: ImageData) {
+  const { data, width, height } = imageData;
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 64));
+  let minAlpha = 255;
+  let maxAlpha = 0;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const idx = (y * width + x) * 4 + 3;
+      const alpha = data[idx];
+      if (alpha < minAlpha) minAlpha = alpha;
+      if (alpha > maxAlpha) maxAlpha = alpha;
+      if (maxAlpha - minAlpha > 32) return true;
+    }
+  }
+  return false;
+}
 
 function interpolateProjection(raw0: any, raw1: any) {
   const mutate: any = d3.geoProjectionMutator((t: number) => (x: number, y: number) => {
@@ -57,14 +108,16 @@ export function GlobeVisualization({
   markerSize = 1,
   showClusterLabels = true,
   glowIntensity = 1,
+  showDayNight = true,
+  showSun = true,
+  showCloudLayer = true,
+  showWeatherLayer = false,
 }: GlobeVisualizationProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const textureRef = useRef<HTMLImageElement | null>(null);
-  const textureDataRef = useRef<ImageData | null>(null);
-  const rasterCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -77,12 +130,13 @@ export function GlobeVisualization({
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [hoveredCluster, setHoveredCluster] = useState<CameraCluster | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  // textureReady is no longer needed for OSM tiles but we keep it for now to minimize diff or remove it?
-  // We'll keep it to avoid breaking other effects, but it won't be used for OSM.
-  const [textureReady, setTextureReady] = useState(false);
+  const [sunTimestamp, setSunTimestamp] = useState(() => Date.now());
+  const [overlayRefresh, setOverlayRefresh] = useState(0);
+  const [overlayDebug, setOverlayDebug] = useState<string | null>(null);
 
   // Cache for OSM tiles
   const tileCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  const overlayTileCache = useRef<Map<string, HTMLImageElement>>(new Map());
   const [mapOffset, setMapOffset] = useState<[number, number]>([0, 0]);
   const resizeRafRef = useRef<number | null>(null);
   const viewAnimationRef = useRef<number | null>(null);
@@ -90,6 +144,16 @@ export function GlobeVisualization({
   const zoomingTimeoutRef = useRef<number | null>(null);
   const autoRotateRafRef = useRef<number | null>(null);
   const autoRotateLastTimeRef = useRef<number | null>(null);
+  const overlayRasterRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayTextureRasterRef = useRef<HTMLCanvasElement | null>(null);
+  const cloudTextureRef = useRef<HTMLImageElement | null>(null);
+  const cloudTextureDataRef = useRef<ImageData | null>(null);
+  const weatherTextureRef = useRef<HTMLImageElement | null>(null);
+  const weatherTextureDataRef = useRef<ImageData | null>(null);
+  const cloudTextureUsesAlphaRef = useRef(true);
+  const weatherTextureUsesAlphaRef = useRef(true);
+  const cloudTextureDateRef = useRef<string | null>(null);
+  const weatherTextureDateRef = useRef<string | null>(null);
   const dragPendingMouseRef = useRef<[number, number] | null>(null);
   const lastMouseRef = useRef<[number, number]>([0, 0]);
   const lastPinchDistanceRef = useRef<number | null>(null);
@@ -101,9 +165,21 @@ export function GlobeVisualization({
   const hoverPendingMouseRef = useRef<[number, number] | null>(null);
   const hoveredClusterRef = useRef<CameraCluster | null>(null);
 
+  const sunPosition = useMemo(() => getSunPosition(new Date(sunTimestamp)), [sunTimestamp]);
+  const gibsDate = useMemo(
+    () => formatGibsDate(new Date(sunTimestamp - 12 * 60 * 60 * 1000)),
+    [sunTimestamp]
+  );
+
   useEffect(() => {
     setMapVariant(mapVariantProp);
   }, [mapVariantProp]);
+
+  useEffect(() => {
+    if (overlayDebug) {
+      console.info(`[GIBS overlay] ${overlayDebug}`);
+    }
+  }, [overlayDebug]);
 
   // Create projection helper
   const createProjection = useCallback((width: number, height: number) => {
@@ -375,36 +451,71 @@ export function GlobeVisualization({
     return () => controller.abort();
   }, []);
 
-  // Load satellite texture
   useEffect(() => {
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.src = MAP_TEXTURE_URL;
+    const interval = window.setInterval(() => {
+      setSunTimestamp(Date.now());
+    }, 60000);
 
-    image.onload = () => {
-      textureRef.current = image;
-      const offscreen = document.createElement("canvas");
-      offscreen.width = image.width;
-      offscreen.height = image.height;
-      const offCtx = offscreen.getContext("2d");
-      if (offCtx) {
-        try {
-          offCtx.drawImage(image, 0, 0);
-          textureDataRef.current = offCtx.getImageData(0, 0, image.width, image.height);
-        } catch (error) {
-          console.warn("Satellite texture pixel access blocked; falling back to map-only render.", error);
-          textureDataRef.current = null;
-        }
-      }
-      setTextureReady(true);
-    };
-    image.onerror = (error) => {
-      console.warn("Failed to load satellite texture.", error);
-      setTextureReady(false);
-      textureDataRef.current = null;
-      textureRef.current = null;
-    };
+    return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const loadTexture = (layer: string, imageRef: React.MutableRefObject<HTMLImageElement | null>) => {
+      const url = `${GIBS_WMS_BASE}?service=WMS&request=GetMap&version=1.1.1&layers=${layer}&styles=&format=image/png&transparent=true&width=${GIBS_WMS_WIDTH}&height=${GIBS_WMS_HEIGHT}&srs=EPSG:4326&bbox=-180,-90,180,90&time=${gibsDate}`;
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onerror = () => {
+        console.warn(`Failed to load GIBS layer ${layer} for ${gibsDate}.`);
+      };
+      image.src = url;
+      imageRef.current = image;
+      return image;
+    };
+
+    if (showCloudLayer && cloudTextureDateRef.current !== gibsDate) {
+      cloudTextureDateRef.current = gibsDate;
+      const image = loadTexture(CLOUD_LAYER, cloudTextureRef);
+      image.onload = () => {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = GIBS_WMS_WIDTH;
+        offscreen.height = GIBS_WMS_HEIGHT;
+        const offCtx = offscreen.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(image, 0, 0);
+          const data = offCtx.getImageData(0, 0, GIBS_WMS_WIDTH, GIBS_WMS_HEIGHT);
+          cloudTextureDataRef.current = data;
+          cloudTextureUsesAlphaRef.current = inferTextureUsesAlpha(data);
+        }
+        setOverlayDebug(`cloud:${cloudTextureUsesAlphaRef.current ? "alpha" : "opaque"} weather:${weatherTextureUsesAlphaRef.current ? "alpha" : "opaque"}`);
+        setOverlayRefresh(prev => prev + 1);
+      };
+    } else if (!showCloudLayer) {
+      cloudTextureDataRef.current = null;
+      cloudTextureDateRef.current = null;
+    }
+
+    if (showWeatherLayer && weatherTextureDateRef.current !== gibsDate) {
+      weatherTextureDateRef.current = gibsDate;
+      const image = loadTexture(WEATHER_LAYER, weatherTextureRef);
+      image.onload = () => {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = GIBS_WMS_WIDTH;
+        offscreen.height = GIBS_WMS_HEIGHT;
+        const offCtx = offscreen.getContext("2d");
+        if (offCtx) {
+          offCtx.drawImage(image, 0, 0);
+          const data = offCtx.getImageData(0, 0, GIBS_WMS_WIDTH, GIBS_WMS_HEIGHT);
+          weatherTextureDataRef.current = data;
+          weatherTextureUsesAlphaRef.current = inferTextureUsesAlpha(data);
+        }
+        setOverlayDebug(`cloud:${cloudTextureUsesAlphaRef.current ? "alpha" : "opaque"} weather:${weatherTextureUsesAlphaRef.current ? "alpha" : "opaque"}`);
+        setOverlayRefresh(prev => prev + 1);
+      };
+    } else if (!showWeatherLayer) {
+      weatherTextureDataRef.current = null;
+      weatherTextureDateRef.current = null;
+    }
+  }, [gibsDate, showCloudLayer, showWeatherLayer]);
 
   // Handle mouse wheel zoom
   const handleWheel = useCallback((event: React.WheelEvent) => {
@@ -864,7 +975,7 @@ export function GlobeVisualization({
 
   }, [worldData, dimensions, createProjection, progress, mapVariant]);
 
-  // Render satellite texture on base canvas
+  // Render base map (OSM tiles)
   useEffect(() => {
     if (!baseCanvasRef.current) return;
 
@@ -884,270 +995,439 @@ export function GlobeVisualization({
 
     const isFullMapMode = progress >= 100;
 
+    if (mapVariant !== 'openstreetmap') {
+      return;
+    }
 
-    // Draw Map (Tiles or Texture)
-    if (mapVariant === 'openstreetmap') {
-      if (!isFullMapMode) {
-        // In globe mode for OSM, we just render transparent/outline or could render a static image
-        // For now, we fall back to just clearing the canvas (handled above).
-        // If you want a globe map, we'd need a different texture.
-        return;
-      }
+    if (!isFullMapMode || !showOsmTiles || !projection || !projectionInvert) {
+      return;
+    }
 
-      if (!showOsmTiles) {
-        return;
-      }
+    // OSM Tile Rendering (Mercator)
+    // 1. Calculate Zoom Level
+    const projectionScale = (projection as d3.GeoProjection).scale();
+    // d3 mercator scale = 256 / (2*PI) * 2^z
+    // s = 256 * 2^z / (2*PI)  =>  s * 2*PI / 256 = 2^z
+    const z = Math.max(0, Math.floor(Math.log2(projectionScale * 2 * Math.PI / 256)));
+    const renderZ = Math.max(0, (isDragging || isZooming) ? z - 1 : z);
+    const zoomPower = Math.pow(2, renderZ);
 
-      // OSM Tile Rendering (Mercator)
-      // 1. Calculate Zoom Level
-      const projectionScale = (projection as d3.GeoProjection).scale();
-      // d3 mercator scale = 256 / (2*PI) * 2^z
-      // s = 256 * 2^z / (2*PI)  =>  s * 2*PI / 256 = 2^z
-      const z = Math.max(0, Math.floor(Math.log2(projectionScale * 2 * Math.PI / 256)));
-      const renderZ = Math.max(0, (isDragging || isZooming) ? z - 1 : z);
-      const zoomPower = Math.pow(2, renderZ);
+    // 2. Visible Bounds
+    // Invert screen corners to get Lon/Lat
+    const tl = projectionInvert([0, 0]);
+    const br = projectionInvert([width, height]);
 
-      // 2. Visible Bounds
-      // Invert screen corners to get Lon/Lat
-      const tl = projectionInvert([0, 0]);
-      const br = projectionInvert([width, height]);
+    if (!tl || !br) return;
 
-      if (!tl || !br) return;
+    const [lon1, lat1] = tl;
+    const [lon2, lat2] = br;
 
-      const [lon1, lat1] = tl;
-      const [lon2, lat2] = br;
+    // Convert to Tile Coordinates
+    const tileX = (lon: number) => (lon + 180) / 360 * zoomPower;
+    const tileY = (lat: number) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * zoomPower;
 
-      // Convert to Tile Coordinates
-      const tileX = (lon: number) => (lon + 180) / 360 * zoomPower;
-      const tileY = (lat: number) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * zoomPower;
+    const minX = Math.floor(Math.min(tileX(lon1), tileX(lon2)));
+    const maxX = Math.floor(Math.max(tileX(lon1), tileX(lon2)));
+    const minY = Math.floor(Math.min(tileY(lat1), tileY(lat2)));
+    const maxY = Math.floor(Math.max(tileY(lat1), tileY(lat2)));
 
-      const minX = Math.floor(Math.min(tileX(lon1), tileX(lon2)));
-      const maxX = Math.floor(Math.max(tileX(lon1), tileX(lon2)));
-      const minY = Math.floor(Math.min(tileY(lat1), tileY(lat2)));
-      const maxY = Math.floor(Math.max(tileY(lat1), tileY(lat2)));
+    // 3. Draw Tiles
+    // We need to calculate where to draw the tile (0,0) based on projection
+    // Or just map tile coordinates to screen coordinates
 
-      // 3. Draw Tiles
-      const tileSize = 256;
-      // We need to calculate where to draw the tile (0,0) based on projection
-      // Or just map tile coordinates to screen coordinates
+    // Simpler: iterate tiles, calculate their screen position using projection
+    // But projection gives pixel for center?
+    // Better: Use the d3 transform directly.
+    // x_screen = (x_tile - tx) * k + cx ...
 
-      // Simpler: iterate tiles, calculate their screen position using projection
-      // But projection gives pixel for center?
-      // Better: Use the d3 transform directly.
-      // x_screen = (x_tile - tx) * k + cx ...
+    // Let's use the layout math:
+    // scale k = 256 * 2^z / (2*PI) -- wait, d3 scale matches this?
+    // Actually projection(lon,lat) gives exact screen pixels.
+    // So let's project the Top-Left of each tile to find where to draw it.
 
-      // Let's use the layout math:
-      // scale k = 256 * 2^z / (2*PI) -- wait, d3 scale matches this?
-      // Actually projection(lon,lat) gives exact screen pixels.
-      // So let's project the Top-Left of each tile to find where to draw it.
+    ctx.save();
 
-      ctx.save();
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        // Wrap x for world repeating?
+        // Render tiles
+        const wrappedX = x % zoomPower;
+        const normX = wrappedX < 0 ? wrappedX + zoomPower : wrappedX;
 
-      for (let x = minX; x <= maxX; x++) {
-        for (let y = minY; y <= maxY; y++) {
-          // Wrap x for world repeating?
-          // Render tiles
-          const wrappedX = x % zoomPower;
-          const normX = wrappedX < 0 ? wrappedX + zoomPower : wrappedX;
+        const url = `https://tile.openstreetmap.org/${renderZ}/${normX}/${y}.png`;
 
-          const url = `https://tile.openstreetmap.org/${renderZ}/${normX}/${y}.png`;
+        // Check cache (LRU-ish order)
+        let img = tileCache.current.get(url);
+        if (!img) {
+          img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = url;
+        }
 
-          // Check cache
-          let img = tileCache.current.get(url);
-          if (!img) {
-            img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = url;
-            img.onload = () => {
-              // Force re-render if visible?
-              // We rely on the fact that subsequent frames (interacting) will show it.
-              // Ideally we force update:
-              // setTextureReady(prev => !prev); // HACK to force update
-            };
-            tileCache.current.set(url, img);
-          }
+        tileCache.current.delete(url);
+        tileCache.current.set(url, img);
 
-          if (img.complete && img.naturalWidth > 0) {
-            // Calculate position
-            // Tile coord (x, y) corresponds to lon/lat:
-            // Convert back to lon/lat is expensive inside loop? 
-            // No, we can project tile coordinates directly if we know the transform.
-
-            // Let's deduce screen rect of the tile.
-            // We know tile (x,y) at zoom z covers conceptual pixel space:
-            // X: x*256 to (x+1)*256
-            // Y: y*256 to (y+1)*256
-            // But this is in "Tile Pixel Space".
-
-            // D3 Mercator projection pixel space:
-            // [x, y] = projection([lon, lat])
-
-            // We can just project the Top-Left corner of the tile.
-            const lon = (x / zoomPower) * 360 - 180;
-            const lat_rad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / zoomPower)));
-            const lat = lat_rad * 180 / Math.PI;
-
-            const [px, py] = projection([lon, lat]) || [0, 0];
-
-            // Calculate size? 
-            // Size varies if z is not integer matching projection scale?
-            // But we chose z based on projection scale.
-            // scale factor = projection.scale() * 2 * PI / (256 * 2^z)
-            // This factor applies to the 256px tile.
-            const scaleFactor = (projectionScale * 2 * Math.PI) / (zoomPower * 256);
-            const size = 256 * scaleFactor;
-
-            // Fix for floating point gaps: add small overlap?
-            ctx.drawImage(img, px, py, size + 0.5, size + 0.5);
+        if (tileCache.current.size > TILE_CACHE_MAX) {
+          const oldestKey = tileCache.current.keys().next().value as string | undefined;
+          if (oldestKey) {
+            tileCache.current.delete(oldestKey);
           }
         }
+
+        if (img.complete && img.naturalWidth > 0) {
+          // Calculate position
+          // Tile coord (x, y) corresponds to lon/lat:
+          // Convert back to lon/lat is expensive inside loop?
+          // No, we can project tile coordinates directly if we know the transform.
+
+          // Let's deduce screen rect of the tile.
+          // We know tile (x,y) at zoom z covers conceptual pixel space:
+          // X: x*256 to (x+1)*256
+          // Y: y*256 to (y+1)*256
+          // But this is in "Tile Pixel Space".
+
+          // D3 Mercator projection pixel space:
+          // [x, y] = projection([lon, lat])
+
+          // We can just project the Top-Left corner of the tile.
+          const lon = (x / zoomPower) * 360 - 180;
+          const lat_rad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / zoomPower)));
+          const lat = lat_rad * 180 / Math.PI;
+
+          const [px, py] = projection([lon, lat]) || [0, 0];
+
+          // Calculate size?
+          // Size varies if z is not integer matching projection scale?
+          // But we chose z based on projection scale.
+          // scale factor = projection.scale() * 2 * PI / (256 * 2^z)
+          // This factor applies to the 256px tile.
+          const scaleFactor = (projectionScale * 2 * Math.PI) / (zoomPower * 256);
+          const size = 256 * scaleFactor;
+
+          // Fix for floating point gaps: add small overlap?
+          ctx.drawImage(img, px, py, size + 0.5, size + 0.5);
+        }
       }
-      ctx.restore();
-      return;
     }
+    ctx.restore();
+  }, [dimensions, mapVariant, progress, projection, projectionInvert, showOsmTiles, isDragging, isZooming]);
 
-    if (mapVariant === 'outline' || !textureReady) return;
+  // Render overlays (day/night, sun, weather, clouds)
+  useEffect(() => {
+    if (!overlayCanvasRef.current || !projection) return;
 
-    const textureImage = textureRef.current;
-    if (!textureImage) return;
+    const canvas = overlayCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
+    const { width, height } = dimensions;
+    if (!width || !height) return;
 
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
 
-    // FAST PATH: For flat map mode, use direct canvas drawImage (instant, 60fps)
-    if (isFullMapMode) {
-      ctx.save();
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-
-      // Calculate draw size based on zoom
-      const drawWidth = width * zoom;
-      const drawHeight = (drawWidth / textureImage.width) * textureImage.height;
-      const drawX = (width - drawWidth) / 2 + mapOffset[0];
-      const drawY = (height - drawHeight) / 2 + mapOffset[1];
-
-      ctx.globalAlpha = 0.95;
-      ctx.drawImage(textureImage, drawX, drawY, drawWidth, drawHeight);
-      ctx.restore();
-      return;
-    }
-
-    // GLOBE/TRANSITION MODE: Need projection-based rendering
-    if (!projection || !projectionInvert) return;
-
-    // ... (Existing globe render logic reused for satellite fallback if user manually adds it back?)
-    // Actually, since we removed satellite button, this code is dead unless mapVariant is satellite.
-    // We'll keep it as is, it won't run.
-
-    const invert = projectionInvert;
-    const texture = textureDataRef.current;
-
-    // If pixel data isn't accessible, fallback to a flat map draw when in map view.
-    // ...
-    // Copying existing logic just to close the function
-    if (!texture) {
-      // ...
-      return;
-    }
-
-    // Keeping the rest of the file structure intact by not replacing too much if not needed.
-    // But I need to close the effect.
-    // The Original Code continued... 
-    // I will just use the original code logic for the rest.
-    // wait, I can't leave "..." in replacement.
-
-    // I end my replacement block here? No, I need to match the closing of the effect.
-    // The original code was:
-    // 642:    if (mapVariant !== 'satellite' || !textureReady) return;
-    // ...
-    // 756:  }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging, isZooming, showOsmTiles]);
-
-    // My replacement replaces from 642.
-    // I'll paste the original globe rendering logic (which is fine to keep, it just won't trigger).
-
-    const invert2 = projectionInvert;
-    const texture2 = textureDataRef.current;
-
-    if (!texture2) {
-      if (progress >= 95 && textureImage) {
-        ctx.globalAlpha = 0.95;
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(textureImage, 0, 0, width, height);
+    const isFullMapMode = progress >= 100;
+    const projectionBase = projection as d3.GeoProjection;
+    const overlayInvert = (() => {
+      if (!projectionInvert) return null;
+      if (progress < 95) {
+        const ortho = d3.geoOrthographic()
+          .scale(projectionBase.scale())
+          .translate(projectionBase.translate())
+          .rotate(projectionBase.rotate())
+          .precision(0.1);
+        return ortho.invert?.bind(ortho) ?? projectionInvert;
       }
-      return;
-    }
+      return projectionInvert;
+    })();
+    const shouldClipSphere = progress < 95;
 
-    const isGlobeView = progress < 95;
-    if (isGlobeView) {
-      const radius = (projection as any).scale?.() ?? Math.min(width, height) * 0.4;
+    if (shouldClipSphere) {
+      const clipPath = d3.geoPath(projection).context(ctx);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
+      clipPath({ type: "Sphere" } as any);
       ctx.clip();
     }
 
-    let sampleStep: number;
-    if (isDragging) {
-      sampleStep = 8;
-    } else if (zoom >= 4) {
-      sampleStep = 2;
-    } else if (zoom >= 2) {
-      sampleStep = 3;
-    } else if (zoom >= 1) {
-      sampleStep = 4;
-    } else {
-      sampleStep = 6;
-    }
-    const sampleWidth = Math.ceil(width / sampleStep);
-    const sampleHeight = Math.ceil(height / sampleStep);
+    const shouldDrawTiles =
+      isFullMapMode &&
+      mapVariant === 'openstreetmap' &&
+      projectionInvert &&
+      (showCloudLayer || showWeatherLayer);
+    const shouldDrawGlobalOverlay =
+      overlayInvert &&
+      (showCloudLayer || showWeatherLayer) &&
+      (!isFullMapMode || mapVariant !== 'openstreetmap');
 
-    let rasterCanvas = rasterCanvasRef.current;
-    if (!rasterCanvas) {
-      rasterCanvas = document.createElement('canvas');
-      rasterCanvasRef.current = rasterCanvas;
-    }
+    if (shouldDrawTiles && projectionInvert) {
+      const projectionScale = (projection as d3.GeoProjection).scale();
+      const z = Math.max(0, Math.floor(Math.log2(projectionScale * 2 * Math.PI / 256)));
+      const renderZ = Math.max(0, (isDragging || isZooming) ? z - 1 : z);
+      const gibsZoom = Math.min(6, renderZ);
+      const zoomPower = Math.pow(2, gibsZoom);
 
-    if (rasterCanvas.width !== sampleWidth || rasterCanvas.height !== sampleHeight) {
-      rasterCanvas.width = sampleWidth;
-      rasterCanvas.height = sampleHeight;
-    }
+      const tl = projectionInvert([0, 0]);
+      const br = projectionInvert([width, height]);
+      if (tl && br) {
+        const [lon1, lat1] = tl;
+        const [lon2, lat2] = br;
 
-    const rasterCtx = rasterCanvas.getContext('2d');
-    if (!rasterCtx) return;
+        const tileX = (lon: number) => (lon + 180) / 360 * zoomPower;
+        const tileY = (lat: number) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * zoomPower;
 
-    const imageData = rasterCtx.createImageData(sampleWidth, sampleHeight);
-    const data = imageData.data;
+        const minX = Math.floor(Math.min(tileX(lon1), tileX(lon2)));
+        const maxX = Math.floor(Math.max(tileX(lon1), tileX(lon2)));
+        const minY = Math.floor(Math.min(tileY(lat1), tileY(lat2)));
+        const maxY = Math.floor(Math.max(tileY(lat1), tileY(lat2)));
 
-    for (let sy = 0; sy < sampleHeight; sy++) {
-      const y = (sy + 0.5) * sampleStep;
-      for (let sx = 0; sx < sampleWidth; sx++) {
-        const x = (sx + 0.5) * sampleStep;
-        const lonLat = invert2([x, y]);
-        if (!lonLat) continue;
-        const [lon, lat] = lonLat;
-        const u = (lon + 180) / 360;
-        const v = (90 - lat) / 180;
-        if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+        const layers: Array<{ name: string; opacity: number }> = [];
+        if (showCloudLayer) layers.push({ name: CLOUD_LAYER, opacity: 0.45 });
+        if (showWeatherLayer) layers.push({ name: WEATHER_LAYER, opacity: 0.35 });
 
-        const tx = Math.min(texture2.width - 1, Math.max(0, Math.floor(u * texture2.width)));
-        const ty = Math.min(texture2.height - 1, Math.max(0, Math.floor(v * texture2.height)));
-        const tIndex = (ty * texture2.width + tx) * 4;
-        const idx = (sy * sampleWidth + sx) * 4;
+        for (const layer of layers) {
+          ctx.save();
+          ctx.globalAlpha = layer.opacity;
 
-        data[idx] = texture2.data[tIndex];
-        data[idx + 1] = texture2.data[tIndex + 1];
-        data[idx + 2] = texture2.data[tIndex + 2];
-        data[idx + 3] = 220;
+          for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+              const wrappedX = x % zoomPower;
+              const normX = wrappedX < 0 ? wrappedX + zoomPower : wrappedX;
+              if (y < 0 || y >= zoomPower) continue;
+
+              const url = `${GIBS_BASE_URL}/${layer.name}/default/${gibsDate}/${GIBS_TILE_MATRIX}/${gibsZoom}/${y}/${normX}.png`;
+
+              let img = overlayTileCache.current.get(url);
+              if (!img) {
+                img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = url;
+                img.onload = () => setOverlayRefresh(prev => prev + 1);
+                overlayTileCache.current.set(url, img);
+              }
+
+              overlayTileCache.current.delete(url);
+              overlayTileCache.current.set(url, img);
+
+              if (overlayTileCache.current.size > OVERLAY_TILE_CACHE_MAX) {
+                const oldestKey = overlayTileCache.current.keys().next().value as string | undefined;
+                if (oldestKey) {
+                  overlayTileCache.current.delete(oldestKey);
+                }
+              }
+
+              if (img.complete && img.naturalWidth > 0) {
+                const lon = (x / zoomPower) * 360 - 180;
+                const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / zoomPower)));
+                const lat = latRad * 180 / Math.PI;
+                const [px, py] = projection([lon, lat]) || [0, 0];
+                const scaleFactor = (projectionScale * 2 * Math.PI) / (zoomPower * 256);
+                const size = 256 * scaleFactor;
+                ctx.drawImage(img, px, py, size + 0.5, size + 0.5);
+              }
+            }
+          }
+
+          ctx.restore();
+        }
       }
     }
 
-    rasterCtx.putImageData(imageData, 0, 0);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(rasterCanvas, 0, 0, width, height);
+    if (shouldDrawGlobalOverlay && overlayInvert) {
+      const cloudTexture = cloudTextureDataRef.current;
+      const weatherTexture = weatherTextureDataRef.current;
+      const cloudOpacity = showCloudLayer ? 0.45 : 0;
+      const weatherOpacity = showWeatherLayer ? 0.35 : 0;
+      const cloudUsesAlpha = cloudTextureUsesAlphaRef.current;
+      const weatherUsesAlpha = weatherTextureUsesAlphaRef.current;
+      const cloudBoost = cloudUsesAlpha ? 1 : 1.35;
+      const weatherBoost = weatherUsesAlpha ? 1 : 1.5;
+      const totalOpacity = cloudOpacity + weatherOpacity;
 
-    if (isGlobeView) {
+      if (totalOpacity > 0 && (cloudTexture || weatherTexture)) {
+        const sampleStep = isDragging ? 8 : 5;
+        const sampleWidth = Math.ceil(width / sampleStep);
+        const sampleHeight = Math.ceil(height / sampleStep);
+        let rasterCanvas = overlayTextureRasterRef.current;
+        if (!rasterCanvas) {
+          rasterCanvas = document.createElement('canvas');
+          overlayTextureRasterRef.current = rasterCanvas;
+        }
+
+        if (rasterCanvas.width !== sampleWidth || rasterCanvas.height !== sampleHeight) {
+          rasterCanvas.width = sampleWidth;
+          rasterCanvas.height = sampleHeight;
+        }
+
+        const rasterCtx = rasterCanvas.getContext('2d');
+        if (rasterCtx) {
+          const imageData = rasterCtx.createImageData(sampleWidth, sampleHeight);
+          const data = imageData.data;
+
+          for (let sy = 0; sy < sampleHeight; sy++) {
+            const y = (sy + 0.5) * sampleStep;
+            for (let sx = 0; sx < sampleWidth; sx++) {
+              const x = (sx + 0.5) * sampleStep;
+              const lonLat = overlayInvert([x, y]);
+              if (!lonLat) continue;
+
+              const [lon, lat] = lonLat;
+              const u = (lon + 180) / 360;
+              const v = (90 - lat) / 180;
+              if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+
+              let r = 0;
+              let g = 0;
+              let b = 0;
+              let a = 0;
+
+              if (cloudTexture && showCloudLayer) {
+                const tx = Math.min(GIBS_WMS_WIDTH - 1, Math.max(0, Math.floor(u * GIBS_WMS_WIDTH)));
+                const ty = Math.min(GIBS_WMS_HEIGHT - 1, Math.max(0, Math.floor(v * GIBS_WMS_HEIGHT)));
+                const idx = (ty * GIBS_WMS_WIDTH + tx) * 4;
+                const rawR = cloudTexture.data[idx];
+                const rawG = cloudTexture.data[idx + 1];
+                const rawB = cloudTexture.data[idx + 2];
+                const rawAlpha = cloudTexture.data[idx + 3] / 255;
+                const intensity = Math.max(rawR, rawG, rawB) / 255;
+                const alphaSource = cloudUsesAlpha ? rawAlpha : Math.min(1, intensity * 1.4);
+                const alpha = alphaSource * cloudOpacity * (cloudUsesAlpha ? 1 : 1.25);
+                r += Math.min(255, rawR * cloudBoost) * alpha;
+                g += Math.min(255, rawG * cloudBoost) * alpha;
+                b += Math.min(255, rawB * cloudBoost) * alpha;
+                a += alpha;
+              }
+
+              if (weatherTexture && showWeatherLayer) {
+                const tx = Math.min(GIBS_WMS_WIDTH - 1, Math.max(0, Math.floor(u * GIBS_WMS_WIDTH)));
+                const ty = Math.min(GIBS_WMS_HEIGHT - 1, Math.max(0, Math.floor(v * GIBS_WMS_HEIGHT)));
+                const idx = (ty * GIBS_WMS_WIDTH + tx) * 4;
+                const rawR = weatherTexture.data[idx];
+                const rawG = weatherTexture.data[idx + 1];
+                const rawB = weatherTexture.data[idx + 2];
+                const rawAlpha = weatherTexture.data[idx + 3] / 255;
+                const intensity = Math.max(rawR, rawG, rawB) / 255;
+                const alphaSource = weatherUsesAlpha ? rawAlpha : Math.min(1, intensity * 1.5);
+                const alpha = alphaSource * weatherOpacity * (weatherUsesAlpha ? 1 : 1.3);
+                r += Math.min(255, rawR * weatherBoost) * alpha;
+                g += Math.min(255, rawG * weatherBoost) * alpha;
+                b += Math.min(255, rawB * weatherBoost) * alpha;
+                a += alpha;
+              }
+
+              if (a <= 0) continue;
+
+              const outIdx = (sy * sampleWidth + sx) * 4;
+              const invA = 1 / a;
+              data[outIdx] = Math.min(255, Math.round(r * invA));
+              data[outIdx + 1] = Math.min(255, Math.round(g * invA));
+              data[outIdx + 2] = Math.min(255, Math.round(b * invA));
+              data[outIdx + 3] = Math.min(255, Math.round(a * 255));
+            }
+          }
+
+          rasterCtx.putImageData(imageData, 0, 0);
+          ctx.drawImage(rasterCanvas, 0, 0, width, height);
+        }
+      }
+    }
+
+    if (showDayNight && overlayInvert) {
+      const sampleStep = isDragging ? 10 : 6;
+      const sampleWidth = Math.ceil(width / sampleStep);
+      const sampleHeight = Math.ceil(height / sampleStep);
+      let rasterCanvas = overlayRasterRef.current;
+      if (!rasterCanvas) {
+        rasterCanvas = document.createElement('canvas');
+        overlayRasterRef.current = rasterCanvas;
+      }
+
+      if (rasterCanvas.width !== sampleWidth || rasterCanvas.height !== sampleHeight) {
+        rasterCanvas.width = sampleWidth;
+        rasterCanvas.height = sampleHeight;
+      }
+
+      const rasterCtx = rasterCanvas.getContext('2d');
+      if (rasterCtx) {
+        const imageData = rasterCtx.createImageData(sampleWidth, sampleHeight);
+        const data = imageData.data;
+        const sunLonLat: [number, number] = [sunPosition.longitude, sunPosition.latitude];
+
+        for (let sy = 0; sy < sampleHeight; sy++) {
+          const y = (sy + 0.5) * sampleStep;
+          for (let sx = 0; sx < sampleWidth; sx++) {
+            const x = (sx + 0.5) * sampleStep;
+            const lonLat = overlayInvert([x, y]);
+            if (!lonLat) continue;
+
+            const distance = d3.geoDistance(lonLat as [number, number], sunLonLat);
+            const nightFactor = Math.max(0, (distance - Math.PI / 2) / (Math.PI / 2));
+            const darkness = Math.min(0.8, nightFactor * 0.8);
+            if (darkness <= 0) continue;
+
+            const idx = (sy * sampleWidth + sx) * 4;
+            data[idx] = 6;
+            data[idx + 1] = 10;
+            data[idx + 2] = 16;
+            data[idx + 3] = Math.floor(darkness * 255);
+          }
+        }
+
+        rasterCtx.putImageData(imageData, 0, 0);
+        ctx.drawImage(rasterCanvas, 0, 0, width, height);
+      }
+    }
+
+    if (shouldClipSphere) {
       ctx.restore();
     }
-  }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging]);
+
+    if (showSun) {
+      const sunCoords = projection([sunPosition.longitude, sunPosition.latitude]);
+      if (sunCoords) {
+        const [sunX, sunY] = sunCoords;
+        const size = Math.min(width, height) * 0.24;
+        const dirX = (sunX - width / 2) || 1;
+        const dirY = (sunY - height / 2) || -1;
+        const mag = Math.hypot(dirX, dirY) || 1;
+        const offsetX = sunX + (dirX / mag) * size * 1.6;
+        const offsetY = sunY + (dirY / mag) * size * 1.6;
+
+        const glow = ctx.createRadialGradient(offsetX, offsetY, 0, offsetX, offsetY, size);
+        glow.addColorStop(0, "rgba(255, 228, 170, 0.18)");
+        glow.addColorStop(0.5, "rgba(255, 200, 120, 0.1)");
+        glow.addColorStop(1, "rgba(255, 200, 120, 0)");
+
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(offsetX, offsetY, size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }, [
+    dimensions,
+    progress,
+    mapVariant,
+    projection,
+    projectionInvert,
+    showDayNight,
+    showSun,
+    showCloudLayer,
+    showWeatherLayer,
+    sunPosition,
+    gibsDate,
+    isDragging,
+    isZooming,
+    overlayRefresh,
+  ]);
 
   // Render camera markers on canvas
   useEffect(() => {
@@ -1374,6 +1654,13 @@ export function GlobeVisualization({
         width={dimensions.width}
         height={dimensions.height}
         className="absolute inset-0"
+        style={{ width: '100%', height: '100%' }}
+      />
+
+      {/* Overlay canvas for sun/day-night/clouds/weather */}
+      <canvas
+        ref={overlayCanvasRef}
+        className="absolute inset-0 pointer-events-none"
         style={{ width: '100%', height: '100%' }}
       />
 

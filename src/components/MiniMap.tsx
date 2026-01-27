@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
 
 interface MiniMapProps {
   rotation: [number, number];
