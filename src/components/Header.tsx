@@ -1,7 +1,11 @@
 import { motion } from 'framer-motion';
 import { Eye } from 'lucide-react';
 
-export function Header() {
+interface HeaderProps {
+  rightSlot?: React.ReactNode;
+}
+
+export function Header({ rightSlot }: HeaderProps) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -46,6 +50,8 @@ export function Header() {
               {new Date().toLocaleTimeString('en-US', { hour12: false })} UTC
             </span>
           </div>
+
+          {rightSlot}
         </div>
       </div>
     </motion.header>

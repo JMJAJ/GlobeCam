@@ -1,13 +1,16 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, MapPin, Building2, Radio, Calendar } from 'lucide-react';
+import { X, ExternalLink, MapPin, Building2, Radio, Calendar, Star, Link as LinkIcon } from 'lucide-react';
 import { CameraData } from '@/types/camera';
 
 interface CameraDetailModalProps {
   camera: CameraData | null;
   onClose: () => void;
+  onToggleFavorite?: () => void;
+  isFavorite?: boolean;
+  onCopyShareLink?: () => void;
 }
 
-export function CameraDetailModal({ camera, onClose }: CameraDetailModalProps) {
+export function CameraDetailModal({ camera, onClose, onToggleFavorite, isFavorite, onCopyShareLink }: CameraDetailModalProps) {
   if (!camera) return null;
 
   return (
@@ -120,6 +123,26 @@ export function CameraDetailModal({ camera, onClose }: CameraDetailModalProps) {
               
               {/* Actions */}
               <div className="flex gap-3">
+                {onCopyShareLink && (
+                  <button
+                    type="button"
+                    onClick={onCopyShareLink}
+                    className="flex-1 hud-panel corner-accents flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                  >
+                    <LinkIcon className="w-3.5 h-3.5" />
+                    Share
+                  </button>
+                )}
+                {onToggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={onToggleFavorite}
+                    className="flex-1 hud-panel corner-accents flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                  >
+                    <Star className={`w-3.5 h-3.5 ${isFavorite ? 'text-yellow-400' : ''}`} />
+                    {isFavorite ? 'Unstar' : 'Star'}
+                  </button>
+                )}
                 <a
                   href={camera.page_url}
                   target="_blank"
@@ -129,12 +152,6 @@ export function CameraDetailModal({ camera, onClose }: CameraDetailModalProps) {
                   <ExternalLink className="w-3.5 h-3.5" />
                   View Source
                 </a>
-                <button
-                  onClick={onClose}
-                  className="flex-1 hud-panel flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                >
-                  Close
-                </button>
               </div>
             </div>
           </div>
