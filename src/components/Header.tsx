@@ -35,7 +35,7 @@ export function Header() {
         </div>
 
         {/* Status indicators */}
-        <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+        <div className="hidden sm:flex flex-wrap items-center gap-3 sm:gap-6">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500" />
             <span className="font-mono text-[10px] sm:text-xs text-white/80 uppercase">System Online</span>

@@ -33,14 +33,14 @@ export function QuickFilters({
         {selectedManufacturers.length > 0 && (
           <button
             onClick={() => selectedManufacturers.forEach(m => onManufacturerToggle(m))}
-            className="text-white/60 hover:text-white transition-colors"
+            className="p-2 -m-2 text-white/60 hover:text-white transition-colors"
           >
-            <X className="w-3 h-3" />
+            <X className="w-4 h-4 md:w-3 md:h-3" />
           </button>
         )}
       </div>
 
-        <div className="p-3 space-y-1.5 max-h-[200px] overflow-y-auto">
+        <div className="p-3 space-y-1.5 max-h-none overflow-visible md:max-h-[200px] md:overflow-y-auto">
           {visibleManufacturers.map((manufacturer, index) => (
           <motion.button
             key={manufacturer}
@@ -49,7 +49,7 @@ export function QuickFilters({
             transition={{ duration: 0.3, delay: 0.7 + index * 0.05 }}
             onClick={() => onManufacturerToggle(manufacturer)}
             className={cn(
-              'w-full px-3 py-1.5 rounded-sm transition-all text-left font-mono text-xs',
+              'w-full px-3 py-2.5 md:py-1.5 rounded-sm transition-all text-left font-mono text-xs',
               selectedManufacturers.includes(manufacturer)
                 ? 'bg-accent/20 text-accent border border-accent/30'
                 : 'text-white/80 hover:text-white hover:bg-secondary/30'

@@ -26,7 +26,7 @@ export function RegionFilters({
           Regions
         </span>
       </div>
-      <div className="p-3 space-y-1 max-h-[200px] overflow-y-auto">
+      <div className="p-3 space-y-1 max-h-none overflow-visible md:max-h-[200px] md:overflow-y-auto">
         {regions.map((region, index) => (
           <motion.button
             key={region.name}
@@ -35,7 +35,7 @@ export function RegionFilters({
             transition={{ duration: 0.3, delay: 0.5 + index * 0.05 }}
             onClick={() => onRegionToggle(region.name)}
             className={cn(
-              'w-full flex items-center justify-between px-2 py-1.5 rounded-sm transition-colors',
+              'w-full flex items-center justify-between px-3 py-2.5 md:px-2 md:py-1.5 rounded-sm transition-colors',
               selectedRegions.includes(region.name)
                 ? 'bg-accent/20 text-accent'
                 : 'text-white hover:text-accent hover:bg-secondary/30'

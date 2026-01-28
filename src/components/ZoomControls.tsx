@@ -28,20 +28,20 @@ export function ZoomControls({
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.5, delay: 0.6 }}
-      className="flex flex-col gap-1"
+      className="flex flex-col gap-2 sm:gap-1"
     >
       {/* Zoom in */}
       <button
         onClick={onZoomIn}
         disabled={Number.isFinite(maxZoom) && zoom >= maxZoom}
-        className="hud-panel w-10 h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        className="hud-panel w-12 h-12 sm:w-10 sm:h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         title="Zoom In"
       >
-        <Plus className="w-4 h-4" />
+        <Plus className="w-5 h-5 sm:w-4 sm:h-4" />
       </button>
       
       {/* Zoom level indicator */}
-      <div className="hud-panel px-2 py-3 flex flex-col items-center gap-2">
+      <div className="hud-panel px-3 py-4 sm:px-2 sm:py-3 flex flex-col items-center gap-2">
         <div className="w-1 h-20 bg-secondary/50 rounded-full overflow-hidden relative">
           <motion.div
             className="absolute bottom-0 left-0 right-0 bg-accent/60"
@@ -59,19 +59,19 @@ export function ZoomControls({
       <button
         onClick={onZoomOut}
         disabled={zoom <= minZoom}
-        className="hud-panel w-10 h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        className="hud-panel w-12 h-12 sm:w-10 sm:h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
         title="Zoom Out"
       >
-        <Minus className="w-4 h-4" />
+        <Minus className="w-5 h-5 sm:w-4 sm:h-4" />
       </button>
       
       {/* Reset */}
       <button
         onClick={onReset}
-        className="hud-panel w-10 h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors mt-1"
+        className="hud-panel w-12 h-12 sm:w-10 sm:h-10 flex items-center justify-center text-white/80 hover:text-white hover:bg-secondary/50 transition-colors mt-1"
         title="Reset View"
       >
-        <RotateCcw className="w-4 h-4" />
+        <RotateCcw className="w-5 h-5 sm:w-4 sm:h-4" />
       </button>
     </motion.div>
   );
