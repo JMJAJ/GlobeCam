@@ -1388,7 +1388,7 @@ export function GlobeVisualization({
       />
 
       {/* Zoom Controls */}
-      <div className="absolute right-3 top-24 translate-y-0 z-10 sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
+      <div className="absolute right-3 top-40 translate-y-0 z-10 sm:right-6 sm:top-1/2 sm:-translate-y-1/2">
         <ZoomControls
           zoom={zoom}
           minZoom={MIN_ZOOM}
@@ -1454,21 +1454,21 @@ export function GlobeVisualization({
         <button
           onClick={handleAnimate}
           disabled={isAnimating}
-          className="hud-panel corner-accents w-full sm:w-auto px-4 py-2 font-mono text-xs uppercase tracking-wider text-white hover:bg-secondary/50 transition-colors disabled:opacity-50"
+          className="hud-panel corner-accents w-full sm:w-auto px-4 py-3 sm:py-2 font-mono text-xs uppercase tracking-wider text-white hover:bg-secondary/50 transition-colors disabled:opacity-50"
         >
           {isAnimating ? "Morphing..." : progress === 100 ? "View as Globe" : "View as Map"}
         </button>
 
-        <div className="hud-panel corner-accents w-full sm:w-auto flex items-center gap-1 p-1">
+        <div className="hud-panel corner-accents w-full sm:w-auto flex items-center gap-1 p-2 sm:p-1">
           <button
             onClick={() => handleMapVariantSelect('outline')}
-            className={`flex-1 sm:flex-none px-3 py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'outline' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
+            className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'outline' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             Outline
           </button>
           <button
             onClick={() => handleMapVariantSelect('openstreetmap')}
-            className={`flex-1 sm:flex-none px-3 py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'openstreetmap' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
+            className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 text-center font-mono text-[10px] uppercase tracking-wider transition-colors ${mapVariant === 'openstreetmap' ? 'text-white bg-secondary/60' : 'text-white/70 hover:text-white'}`}
           >
             OpenStreetMap
           </button>

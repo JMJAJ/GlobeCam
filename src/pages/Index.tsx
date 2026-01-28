@@ -12,6 +12,14 @@ import { QuickFilters } from '@/components/QuickFilters';
 import { MiniMap } from '@/components/MiniMap';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from '@/components/ui/drawer';
+import {
   ScanLinesOverlay,
   GridOverlay,
   VignetteOverlay,
@@ -20,7 +28,7 @@ import {
 } from '@/components/VisualOverlays';
 import cameraDataRaw from '@/data/camera_data.json';
 import { CameraData } from '@/types/camera';
-import { Search, Sliders } from 'lucide-react';
+import { Layers, Search, Sliders, X } from 'lucide-react';
 
 // Helper function to determine continent from country
 function getContinent(country: string): string {
@@ -290,6 +298,7 @@ export default function Index() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHudOpen, setIsHudOpen] = useState(false);
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
   const [autoRotateSpeed, setAutoRotateSpeed] = useState(1.25);
   const [maxVisibleNodes, setMaxVisibleNodes] = useState(() => Math.min(1200, maxVisibleNodesMax));
@@ -376,6 +385,7 @@ export default function Index() {
 
 
   const handleSearchOpen = useCallback(() => {
+    setIsHudOpen(false);
     setIsSearchOpen(true);
   }, []);
 
@@ -384,6 +394,7 @@ export default function Index() {
   }, []);
 
   const handleSettingsOpen = useCallback(() => {
+    setIsHudOpen(false);
     setIsSettingsOpen(true);
   }, []);
 
@@ -433,7 +444,7 @@ export default function Index() {
 
         {/* HUD Panels */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="pointer-events-none absolute left-3 right-3 top-20 bottom-28 sm:left-6 sm:right-6 sm:top-24 sm:bottom-24 flex flex-col md:flex-row md:justify-between gap-4 md:gap-6 overflow-y-auto md:overflow-visible">
+          <div className="pointer-events-none absolute left-3 right-3 top-20 bottom-28 sm:left-6 sm:right-6 sm:top-24 sm:bottom-24 hidden md:flex md:flex-row md:justify-between gap-4 md:gap-6 overflow-y-auto md:overflow-visible">
             <div className="pointer-events-auto w-full md:w-[260px] md:max-w-[35vw] flex flex-col gap-4 md:max-h-[calc(100vh-140px)] md:overflow-y-auto">
               <StatsDisplay
                 totalCameras={stats.total}
@@ -478,6 +489,90 @@ export default function Index() {
                 <MiniMap rotation={currentRotation} />
               </div>
             </div>
+          </div>
+
+          <div className="pointer-events-auto md:hidden absolute left-3 right-3 top-20 z-30">
+            <Drawer open={isHudOpen} onOpenChange={setIsHudOpen}>
+              <div className="grid grid-cols-3 gap-2">
+                <DrawerTrigger asChild>
+                  <button
+                    type="button"
+                    className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    aria-label="Open panels"
+                  >
+                    <Layers className="w-4 h-4" />
+                    Panels
+                  </button>
+                </DrawerTrigger>
+
+                <button
+                  type="button"
+                  onClick={handleSearchOpen}
+                  className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                  aria-label="Browse cameras"
+                >
+                  <Search className="w-4 h-4" />
+                  Search
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSettingsOpen}
+                  className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                  aria-label="Open settings"
+                >
+                  <Sliders className="w-4 h-4" />
+                  Settings
+                </button>
+              </div>
+
+              <DrawerContent className="border-border/40 bg-background/80 backdrop-blur">
+                <DrawerHeader className="p-4 pb-2 text-left">
+                  <div className="flex items-center justify-between">
+                    <DrawerTitle className="font-mono text-xs uppercase tracking-wider text-white/80">
+                      Panels
+                    </DrawerTitle>
+                    <DrawerClose asChild>
+                      <button
+                        type="button"
+                        className="p-2 rounded-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                        aria-label="Close panels"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </DrawerClose>
+                  </div>
+                </DrawerHeader>
+
+                <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto space-y-3">
+                  <StatsDisplay
+                    totalCameras={stats.total}
+                    visibleCameras={filteredCameras.length}
+                    continents={Object.keys(stats.byContinent).length}
+                    countries={Object.keys(stats.byCountry).length}
+                  />
+
+                  <LiveActivityIndicator
+                    online={stats.online}
+                    total={stats.total}
+                  />
+
+                  <RegionFilters
+                    regions={regions}
+                    selectedRegions={selectedRegions}
+                    onRegionToggle={handleRegionToggle}
+                  />
+
+                  <QuickFilters
+                    manufacturers={manufacturers}
+                    selectedManufacturers={selectedManufacturers}
+                    onManufacturerToggle={handleManufacturerToggle}
+                  />
+
+                  <MiniMap rotation={currentRotation} />
+                </div>
+              </DrawerContent>
+            </Drawer>
           </div>
         </div>
 
