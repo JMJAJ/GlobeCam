@@ -31,6 +31,7 @@ import { Layers, Search, Sliders, X, Star } from 'lucide-react';
 
 const FAVORITES_STORAGE_KEY = 'globecam:favorites';
 const RECENTS_STORAGE_KEY = 'globecam:recents';
+const SETTINGS_STORAGE_KEY = 'globecam:settings';
 
 function readStringArrayStorage(key: string): string[] {
   try {
@@ -41,6 +42,25 @@ function readStringArrayStorage(key: string): string[] {
     return [];
   } catch {
     return [];
+  }
+
+}
+
+function readSettingsStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSettingsStorage<T>(key: string, value: T) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
   }
 }
 
@@ -343,6 +363,11 @@ export default function Index() {
   const stats = useMemo(() => getCameraStats(allCameras), [allCameras]);
   const maxVisibleNodesMax = Math.max(500, Math.min(5000, allCameras.length));
 
+  const persistedSettings = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return readSettingsStorage<any>(SETTINGS_STORAGE_KEY, null);
+  }, []);
+
   const [selectedRegions, setSelectedRegions] = useState<string[]>(initialSelectedRegions);
   const [selectedCamera, setSelectedCamera] = useState<CameraData | null>(() => {
     if (!initialSelectedCameraId) return null;
@@ -358,14 +383,25 @@ export default function Index() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHudOpen, setIsHudOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
-  const [autoRotateSpeed, setAutoRotateSpeed] = useState(1.25);
-  const [maxVisibleNodes, setMaxVisibleNodes] = useState(() => Math.min(1200, maxVisibleNodesMax));
-  const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>('outline');
-  const [showOsmTiles, setShowOsmTiles] = useState(true);
-  const [markerSize, setMarkerSize] = useState(1);
-  const [showClusterLabels, setShowClusterLabels] = useState(true);
-  const [glowIntensity, setGlowIntensity] = useState(1);
+  const [autoRotateEnabled, setAutoRotateEnabled] = useState(() => persistedSettings?.autoRotateEnabled ?? true);
+  const [autoRotateSpeed, setAutoRotateSpeed] = useState(() => persistedSettings?.autoRotateSpeed ?? 1.25);
+  const [maxVisibleNodes, setMaxVisibleNodes] = useState(() => {
+    const raw = persistedSettings?.maxVisibleNodes;
+    const fallback = Math.min(1200, maxVisibleNodesMax);
+    return typeof raw === 'number' ? Math.max(0, Math.min(maxVisibleNodesMax, raw)) : fallback;
+  });
+  const [mapVariant, setMapVariant] = useState<'outline' | 'openstreetmap'>(() => persistedSettings?.mapVariant ?? 'outline');
+  const [showOsmTiles, setShowOsmTiles] = useState(() => persistedSettings?.showOsmTiles ?? true);
+  const [markerSize, setMarkerSize] = useState(() => persistedSettings?.markerSize ?? 1);
+  const [showClusterLabels, setShowClusterLabels] = useState(() => persistedSettings?.showClusterLabels ?? true);
+  const [glowIntensity, setGlowIntensity] = useState(() => persistedSettings?.glowIntensity ?? 1);
+  const [cloudsEnabled, setCloudsEnabled] = useState(() => persistedSettings?.cloudsEnabled ?? true);
+  const [cloudsOpacity, setCloudsOpacity] = useState(() => {
+    const raw = persistedSettings?.cloudsOpacity;
+    return typeof raw === 'number' ? Math.max(0, Math.min(1, raw)) : 0.55;
+  });
+  const [viewMode, setViewMode] = useState<'globe' | 'map'>(() => persistedSettings?.viewMode ?? 'globe');
+  const [isSceneReady, setIsSceneReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
@@ -611,6 +647,35 @@ export default function Index() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    writeSettingsStorage(SETTINGS_STORAGE_KEY, {
+      autoRotateEnabled,
+      autoRotateSpeed,
+      maxVisibleNodes,
+      mapVariant,
+      showOsmTiles,
+      markerSize,
+      showClusterLabels,
+      glowIntensity,
+      cloudsEnabled,
+      cloudsOpacity,
+      viewMode,
+    });
+  }, [
+    autoRotateEnabled,
+    autoRotateSpeed,
+    maxVisibleNodes,
+    mapVariant,
+    showOsmTiles,
+    markerSize,
+    showClusterLabels,
+    glowIntensity,
+    cloudsEnabled,
+    cloudsOpacity,
+    viewMode,
+  ]);
+
   return (
     <ParallaxProvider>
       <div className="relative w-screen h-screen bg-background overflow-hidden">
@@ -666,9 +731,32 @@ export default function Index() {
               autoRotateEnabled={autoRotateEnabled}
               autoRotateSpeed={autoRotateSpeed}
               markerSize={markerSize}
+              cloudsEnabled={cloudsEnabled}
+              cloudsOpacity={cloudsOpacity}
+              viewMode={viewMode}
+              onReadyChange={setIsSceneReady}
             />
           </motion.div>
         </div>
+
+        {!isSceneReady && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative w-10 h-10">
+                <div className="absolute inset-0 rounded-full border-2 border-white/15" />
+                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-accent animate-spin" />
+              </div>
+              <div className="text-center">
+                <div className="font-mono text-xs uppercase tracking-wider text-white/90">
+                  Loading...
+                </div>
+                <div className="mt-1 font-mono text-[10px] uppercase tracking-wider text-white/50">
+                  Initializing globe
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* HUD Panels */}
         <div className="absolute inset-0 pointer-events-none">
@@ -808,28 +896,34 @@ export default function Index() {
           isOpen={isSettingsOpen}
           autoRotateEnabled={autoRotateEnabled}
           autoRotateSpeed={autoRotateSpeed}
-          maxVisibleNodes={maxVisibleNodes}
-          maxVisibleNodesMax={maxVisibleNodesMax}
-          mapVariant={mapVariant}
           showOsmTiles={showOsmTiles}
           markerSize={markerSize}
-          showClusterLabels={showClusterLabels}
-          glowIntensity={glowIntensity}
+          cloudsEnabled={cloudsEnabled}
+          cloudsOpacity={cloudsOpacity}
           onClose={handleSettingsClose}
           onAutoRotateEnabledChange={setAutoRotateEnabled}
           onAutoRotateSpeedChange={setAutoRotateSpeed}
-          onMaxVisibleNodesChange={(value) => setMaxVisibleNodes(Math.round(value))}
-          onMapVariantChange={setMapVariant}
           onShowOsmTilesChange={setShowOsmTiles}
           onMarkerSizeChange={setMarkerSize}
-          onShowClusterLabelsChange={setShowClusterLabels}
-          onGlowIntensityChange={setGlowIntensity}
+          onCloudsEnabledChange={setCloudsEnabled}
+          onCloudsOpacityChange={setCloudsOpacity}
         />
 
         {/* Overlays */}
         <CornerDecorations />
         <ScanLinesOverlay />
         <VignetteOverlay />
+
+        <div className="hidden sm:block absolute right-6 bottom-24 z-30">
+          <button
+            type="button"
+            onClick={() => setViewMode((prev) => (prev === 'map' ? 'globe' : 'map'))}
+            className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+            aria-label="Toggle map view"
+          >
+            {viewMode === 'map' ? 'Globe' : 'Map'}
+          </button>
+        </div>
 
         {/* Footer status bar */}
         <motion.div
@@ -844,7 +938,7 @@ export default function Index() {
                 Lon: {currentRotation[0].toFixed(2)}° | Lat: {currentRotation[1].toFixed(2)}°
               </span>
               <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                View: {currentProgress === 100 ? 'Flat Map' : currentProgress === 0 ? 'Globe' : 'Transitioning'}
+                View: {viewMode === 'map' ? 'Flat Map' : 'Globe'}
               </span>
             </div>
 

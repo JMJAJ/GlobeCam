@@ -11,6 +11,10 @@ import {
   PointPrimitiveCollection,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
+  UrlTemplateImageryProvider,
+  SceneMode,
+  WebMercatorProjection,
+  Rectangle,
   Viewer,
   createWorldTerrainAsync,
 } from 'cesium';
@@ -23,6 +27,10 @@ interface CesiumGlobeProps {
   autoRotateEnabled?: boolean;
   autoRotateSpeed?: number;
   markerSize?: number;
+  cloudsEnabled?: boolean;
+  cloudsOpacity?: number;
+  viewMode?: 'globe' | 'map';
+  onReadyChange?: (ready: boolean) => void;
 }
 
 export function CesiumGlobe({
@@ -32,6 +40,10 @@ export function CesiumGlobe({
   autoRotateEnabled = false,
   autoRotateSpeed = 1.25,
   markerSize = 1,
+  cloudsEnabled = true,
+  cloudsOpacity = 0.55,
+  viewMode = 'globe',
+  onReadyChange,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -102,7 +114,107 @@ export function CesiumGlobe({
       shouldAnimate: true,
     });
 
+    // Make 2D mode look like a standard web map (Google/OSM-like Web Mercator)
+    // instead of the default geographic projection.
+    try {
+      (v.scene as any).mapProjection = new WebMercatorProjection(Ellipsoid.WGS84);
+    } catch {
+      // ignore
+    }
+
     viewerRef.current = v;
+
+    onReadyChange?.(false);
+    let terrainReady = false;
+    let tilesReady = false;
+    let frameReady = false;
+    let stableFrames = 0;
+    let postRenderRemove: (() => void) | null = null;
+    let readyTimeout: number | null = null;
+    const maybeReady = () => {
+      if (!(terrainReady && tilesReady)) return;
+
+      if (!frameReady) {
+        const onPostRender = () => {
+          try {
+            if (v.isDestroyed()) return;
+
+            const globeLoaded = (v.scene.globe as any)?.tilesLoaded === true;
+            const tilesetLoaded = tileset ? (tileset as any).tilesLoaded === true : true;
+
+            // Heuristic: globe has produced draw commands (prevents "only markers" moment).
+            const commandCount = ((v.scene as any).frameState?.commandList?.length as number | undefined) ?? 0;
+            const hasSurfaceCommands = commandCount > 0;
+
+            if (globeLoaded && tilesetLoaded && hasSurfaceCommands) {
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+            }
+
+            if (stableFrames >= 3) {
+              frameReady = true;
+              postRenderRemove?.();
+              postRenderRemove = null;
+              if (readyTimeout != null) {
+                window.clearTimeout(readyTimeout);
+                readyTimeout = null;
+              }
+              onReadyChange?.(true);
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        try {
+          v.scene.postRender.addEventListener(onPostRender);
+          postRenderRemove = () => {
+            try {
+              v.scene.postRender.removeEventListener(onPostRender);
+            } catch {
+              // ignore
+            }
+          };
+          v.scene.requestRender();
+        } catch {
+          frameReady = true;
+          onReadyChange?.(true);
+        }
+
+        // Safety: never block forever if something weird happens.
+        if (readyTimeout == null) {
+          readyTimeout = window.setTimeout(() => {
+            readyTimeout = null;
+            if (!frameReady) {
+              frameReady = true;
+              postRenderRemove?.();
+              postRenderRemove = null;
+              onReadyChange?.(true);
+            }
+          }, 20_000);
+        }
+
+        return;
+      }
+
+      onReadyChange?.(true);
+    };
+
+    const owmToken = import.meta.env.VITE_OPENWEATHERMAP_TOKEN as string | undefined;
+    let cloudsLayer: any | null = null;
+    if (owmToken && cloudsEnabled) {
+      try {
+        const provider = new UrlTemplateImageryProvider({
+          url: `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${encodeURIComponent(owmToken)}`,
+          credit: 'OpenWeatherMap',
+        });
+        cloudsLayer = v.imageryLayers.addImageryProvider(provider);
+        cloudsLayer.alpha = Math.max(0, Math.min(1, cloudsOpacity));
+      } catch (e) {
+        console.error('Failed to create OpenWeatherMap clouds layer', e);
+      }
+    }
 
     const ro = new ResizeObserver(() => {
       try {
@@ -188,8 +300,12 @@ export function CesiumGlobe({
         const terrain = await createWorldTerrainAsync();
         if (destroyed) return;
         v.terrainProvider = terrain;
+        terrainReady = true;
+        maybeReady();
       } catch (e) {
         console.error('Failed to create world terrain', e);
+        terrainReady = true;
+        maybeReady();
       }
     })();
 
@@ -207,12 +323,15 @@ export function CesiumGlobe({
         tileset.skipLevels = 1;
         v.scene.primitives.add(tileset);
 
-        // If this tileset includes a globe/surface layer, leaving the default globe enabled can create
-        // "double globe" z-fighting artifacts. Prefer the tileset surface.
-        v.scene.globe.show = false;
+        v.scene.globe.show = true;
         v.scene.requestRender();
+
+        tilesReady = true;
+        maybeReady();
       } catch (e) {
         console.error('Failed to load Cesium Ion tileset 2275207', e);
+        tilesReady = true;
+        maybeReady();
       }
     })();
 
@@ -241,8 +360,23 @@ export function CesiumGlobe({
 
     return () => {
       destroyed = true;
+      onReadyChange?.(false);
+      postRenderRemove?.();
+      postRenderRemove = null;
+      if (readyTimeout != null) {
+        window.clearTimeout(readyTimeout);
+        readyTimeout = null;
+      }
       ro.disconnect();
       v.camera.changed.removeEventListener(updateMarkerVisibility);
+      if (cloudsLayer) {
+        try {
+          v.imageryLayers.remove(cloudsLayer, true);
+        } catch {
+          // ignore
+        }
+        cloudsLayer = null;
+      }
       if (autoRotateRaf != null) {
         cancelAnimationFrame(autoRotateRaf);
         autoRotateRaf = null;
@@ -268,6 +402,84 @@ export function CesiumGlobe({
       viewerRef.current = null;
     };
   }, [onCameraSelect]);
+
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+
+    const target = viewMode === 'map' ? SceneMode.SCENE2D : SceneMode.SCENE3D;
+    if (v.scene.mode === target) return;
+
+    try {
+      if (target === SceneMode.SCENE2D) {
+        v.scene.morphTo2D(0.6);
+
+        // After switching to 2D, ensure we start from a "normal map" framing.
+        // (Avoid awkward camera pitch/heading carried over from 3D.)
+        setTimeout(() => {
+          try {
+            if (v.isDestroyed()) return;
+            v.camera.setView({
+              destination: Rectangle.fromDegrees(-180, -85, 180, 85),
+              orientation: {
+                heading: 0,
+                pitch: CesiumMath.toRadians(-90),
+                roll: 0,
+              },
+            } as any);
+            v.scene.requestRender();
+          } catch {
+            // ignore
+          }
+        }, 650);
+      } else {
+        v.scene.morphTo3D(0.6);
+      }
+      v.scene.requestRender();
+    } catch {
+      // ignore
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+
+    const owmToken = import.meta.env.VITE_OPENWEATHERMAP_TOKEN as string | undefined;
+    if (!owmToken) return;
+
+    let layer: any | null = null;
+    const count = (v.imageryLayers as any).length as number | undefined;
+    const n = typeof count === 'number' ? count : 0;
+    for (let i = 0; i < n; i++) {
+      const maybe = (v.imageryLayers as any).get(i);
+      if (maybe?.imageryProvider?.credit?.text === 'OpenWeatherMap') {
+        layer = maybe;
+        break;
+      }
+    }
+
+    if (cloudsEnabled) {
+      if (!layer) {
+        try {
+          const provider = new UrlTemplateImageryProvider({
+            url: `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${encodeURIComponent(owmToken)}`,
+            credit: 'OpenWeatherMap',
+          });
+          layer = v.imageryLayers.addImageryProvider(provider);
+        } catch (e) {
+          console.error('Failed to create OpenWeatherMap clouds layer', e);
+          return;
+        }
+      }
+      layer.alpha = Math.max(0, Math.min(1, cloudsOpacity));
+      layer.show = true;
+    } else if (layer) {
+      layer.show = false;
+    }
+
+    v.scene.requestRender();
+  }, [cloudsEnabled, cloudsOpacity]);
 
   const markerData = useMemo(() => {
     return cameras
@@ -312,6 +524,7 @@ export function CesiumGlobe({
     if (!v) return;
 
     if (!autoRotateEnabled) return;
+    if (viewMode === 'map') return;
 
     let rafId: number | null = null;
     let last = performance.now();
@@ -330,7 +543,7 @@ export function CesiumGlobe({
     return () => {
       if (rafId != null) cancelAnimationFrame(rafId);
     };
-  }, [autoRotateEnabled, autoRotateSpeed]);
+  }, [autoRotateEnabled, autoRotateSpeed, viewMode]);
 
   return (
     <div className="absolute inset-0" ref={containerRef} />
