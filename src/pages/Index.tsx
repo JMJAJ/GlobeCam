@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ParallaxProvider } from '@/components/ParallaxProvider';
 import { CesiumGlobe } from '@/components/CesiumGlobe';
@@ -357,6 +357,7 @@ export default function Index() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHudOpen, setIsHudOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [autoRotateEnabled, setAutoRotateEnabled] = useState(true);
   const [autoRotateSpeed, setAutoRotateSpeed] = useState(1.25);
   const [maxVisibleNodes, setMaxVisibleNodes] = useState(() => Math.min(1200, maxVisibleNodesMax));
@@ -605,6 +606,11 @@ export default function Index() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedCamera?.id, toggleFavoriteSelected]);
 
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
     <ParallaxProvider>
       <div className="relative w-screen h-screen bg-background overflow-hidden">
@@ -615,23 +621,32 @@ export default function Index() {
         {/* Header */}
         <Header
           rightSlot={
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSearchOpen}
-                className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-              >
-                <Search className="w-4 h-4" />
-                Browse
-              </button>
-              <button
-                type="button"
-                onClick={handleSettingsOpen}
-                className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-              >
-                <Sliders className="w-4 h-4" />
-                Settings
-              </button>
+            <div className="absolute right-6 top-6 flex flex-col items-end gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSearchOpen}
+                  className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                >
+                  <Search className="w-4 h-4" />
+                  Browse
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSettingsOpen}
+                  className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                >
+                  <Sliders className="w-4 h-4" />
+                  Settings
+                </button>
+              </div>
+
+              <div className="hidden md:block w-[320px]">
+                <LiveActivityIndicator
+                  online={stats.online}
+                  total={stats.total}
+                />
+              </div>
             </div>
           }
         />
@@ -648,6 +663,9 @@ export default function Index() {
               cameras={filteredCameras}
               onCameraSelect={handleCameraSelect}
               selectedCameraId={selectedCamera?.id ?? null}
+              autoRotateEnabled={autoRotateEnabled}
+              autoRotateSpeed={autoRotateSpeed}
+              markerSize={markerSize}
             />
           </motion.div>
         </div>
@@ -690,13 +708,6 @@ export default function Index() {
                   onManufacturerToggle={handleManufacturerToggleWithUrl}
                 />
             </div>
-          </div>
-
-          <div className="pointer-events-auto hidden md:flex flex-col gap-3 absolute right-6 bottom-28 z-20 w-[320px]">
-            <LiveActivityIndicator
-              online={stats.online}
-              total={stats.total}
-            />
           </div>
 
           <div className="pointer-events-auto md:hidden absolute left-3 right-3 top-20 z-30">
@@ -836,6 +847,13 @@ export default function Index() {
                 View: {currentProgress === 100 ? 'Flat Map' : currentProgress === 0 ? 'Globe' : 'Transitioning'}
               </span>
             </div>
+
+            <div className="hidden sm:block flex-1 text-center">
+              <span className="font-mono text-[10px] text-accent uppercase tracking-wider">
+                {now.toLocaleTimeString(undefined, { hour12: false })}
+              </span>
+            </div>
+
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <span className="font-mono text-[10px] text-white uppercase tracking-wider">
                 Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}

@@ -20,9 +20,19 @@ interface CesiumGlobeProps {
   cameras: CameraData[];
   onCameraSelect?: (camera: CameraData) => void;
   selectedCameraId?: string | null;
+  autoRotateEnabled?: boolean;
+  autoRotateSpeed?: number;
+  markerSize?: number;
 }
 
-export function CesiumGlobe({ cameras, onCameraSelect, selectedCameraId }: CesiumGlobeProps) {
+export function CesiumGlobe({
+  cameras,
+  onCameraSelect,
+  selectedCameraId,
+  autoRotateEnabled = false,
+  autoRotateSpeed = 1.25,
+  markerSize = 1,
+}: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const markerLayerRef = useRef<PointPrimitiveCollection | null>(null);
@@ -127,6 +137,14 @@ export function CesiumGlobe({ cameras, onCameraSelect, selectedCameraId }: Cesiu
     v.scene.screenSpaceCameraController.enableTilt = true;
     v.scene.globe.depthTestAgainstTerrain = false;
 
+    // Show Cesium's built-in compass/tilt widget.
+    // (Cesium adds it when navigationHelpButton is enabled + widgets CSS is loaded.)
+    try {
+      (v as any).cesiumWidget?.creditContainer?.style && ((v as any).cesiumWidget.creditContainer.style.display = 'none');
+    } catch {
+      // ignore
+    }
+
     // Reduce depth precision artifacts (z-fighting) when mixing globe + terrain + 3D tiles.
     v.scene.logarithmicDepthBuffer = true;
 
@@ -214,10 +232,21 @@ export function CesiumGlobe({ cameras, onCameraSelect, selectedCameraId }: Cesiu
 
     v.camera.changed.addEventListener(updateMarkerVisibility);
 
+    let autoRotateRaf: number | null = null;
+    const stepAutoRotate = () => {
+      autoRotateRaf = requestAnimationFrame(stepAutoRotate);
+      // The actual enable/disable is handled by the effect below; this keeps the RAF alive cheaply.
+    };
+    autoRotateRaf = requestAnimationFrame(stepAutoRotate);
+
     return () => {
       destroyed = true;
       ro.disconnect();
       v.camera.changed.removeEventListener(updateMarkerVisibility);
+      if (autoRotateRaf != null) {
+        cancelAnimationFrame(autoRotateRaf);
+        autoRotateRaf = null;
+      }
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -262,7 +291,7 @@ export function CesiumGlobe({ cameras, onCameraSelect, selectedCameraId }: Cesiu
     for (const item of markerData) {
       const p = layer.add({
         position: Cartesian3.fromDegrees(item.camera.longitude, item.camera.latitude, 50),
-        pixelSize: item.selected ? 10 : 6,
+        pixelSize: (item.selected ? 10 : 6) * markerSize,
         color: item.selected ? Color.YELLOW : Color.CYAN.withAlpha(0.85),
         outlineColor: Color.BLACK.withAlpha(0.4),
         outlineWidth: 1,
@@ -276,7 +305,32 @@ export function CesiumGlobe({ cameras, onCameraSelect, selectedCameraId }: Cesiu
     applyCulling(v, layer);
 
     v.scene.requestRender();
-  }, [markerData]);
+  }, [markerData, markerSize]);
+
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+
+    if (!autoRotateEnabled) return;
+
+    let rafId: number | null = null;
+    let last = performance.now();
+    const tick = (t: number) => {
+      rafId = requestAnimationFrame(tick);
+      const dt = (t - last) / 1000;
+      last = t;
+      // Degrees/sec -> radians/sec
+      const radians = CesiumMath.toRadians(autoRotateSpeed) * dt;
+      // Rotate around world Z axis.
+      v.camera.rotate(Cartesian3.UNIT_Z, radians);
+      v.scene.requestRender();
+    };
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, [autoRotateEnabled, autoRotateSpeed]);
 
   return (
     <div className="absolute inset-0" ref={containerRef} />
