@@ -3,7 +3,7 @@ ideas:
 [ ] make it into electron app
 [ ] more details to display about cams
 [X] search cams by name/city/country
-[ ] favorites (star cams) + "favorites" filter
+[X] favorites (star cams) + "favorites" filter
 [ ] share link to a cam (copy URL) + open to that cam on load
 [ ] show camera live/last-updated timestamp + uptime badge
 [ ] show source + license/attribution per cam
@@ -20,7 +20,7 @@ ideas:
 [ ] loading skeletons for cam detail panel
 [ ] screenshot/share image of current globe view
 [ ] time-of-day filter (if metadata exists) / night-mode
-[ ] region presets (EU/NA/Asia) + custom regions
+[X] region presets (EU/NA/Asia) + custom regions
 [ ] multi-select tags (traffic, nature, city, beach, etc.)
 [ ] moderation/report incorrect cam location
 [ ] analytics/debug overlay (fps, points rendered)

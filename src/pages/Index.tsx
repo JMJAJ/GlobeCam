@@ -1,14 +1,14 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ParallaxProvider } from '@/components/ParallaxProvider';
-import { GlobeVisualization } from '@/components/GlobeVisualization';
+import { CesiumGlobe } from '@/components/CesiumGlobe';
 import { Header } from '@/components/Header';
 import { StatsDisplay } from '@/components/StatsDisplay';
 import { LiveActivityIndicator } from '@/components/LiveActivityIndicator';
+import { QuickFilters } from '@/components/QuickFilters';
 import { RegionFilters } from '@/components/RegionFilters';
 import { CommandSearch } from '@/components/CommandSearch';
 import { CameraDetailModal } from '@/components/CameraDetailModal';
-import { QuickFilters } from '@/components/QuickFilters';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import {
   Drawer,
@@ -639,25 +639,15 @@ export default function Index() {
         {/* Main globe container */}
         <div className="absolute inset-0 flex items-center justify-center">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
             className="relative w-full h-full"
           >
-            <GlobeVisualization
+            <CesiumGlobe
               cameras={filteredCameras}
               onCameraSelect={handleCameraSelect}
-              onRotationChange={setCurrentRotation}
-              onProgressChange={setCurrentProgress}
-              autoRotateEnabled={autoRotateEnabled}
-              autoRotateSpeed={autoRotateSpeed}
-              maxVisibleNodes={maxVisibleNodes}
-              mapVariant={mapVariant}
-              onMapVariantChange={setMapVariant}
-              showOsmTiles={showOsmTiles}
-              markerSize={markerSize}
-              showClusterLabels={showClusterLabels}
-              glowIntensity={glowIntensity}
+              selectedCameraId={selectedCamera?.id ?? null}
             />
           </motion.div>
         </div>
