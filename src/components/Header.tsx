@@ -40,17 +40,6 @@ export function Header({ rightSlot }: HeaderProps) {
 
         {/* Status indicators */}
         <div className="hidden sm:flex flex-wrap items-center gap-3 sm:gap-6">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="font-mono text-[10px] sm:text-xs text-white/80 uppercase">System Online</span>
-          </div>
-          
-          <div className="hud-panel px-3 py-1.5">
-            <span className="font-mono text-[10px] sm:text-xs text-accent">
-              {new Date().toLocaleTimeString('en-US', { hour12: false })} UTC
-            </span>
-          </div>
-
           {rightSlot}
         </div>
       </div>
