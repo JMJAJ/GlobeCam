@@ -100,6 +100,10 @@ export function GlobeVisualization({
   const hoverRafRef = useRef<number | null>(null);
   const hoverPendingMouseRef = useRef<[number, number] | null>(null);
   const hoveredClusterRef = useRef<CameraCluster | null>(null);
+  const tooltipPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const markerRenderRafRef = useRef<number | null>(null);
+  const markerRenderPendingRef = useRef(false);
+  const lastHoverUpdateRef = useRef(0);
 
   useEffect(() => {
     setMapVariant(mapVariantProp);
@@ -217,17 +221,20 @@ export function GlobeVisualization({
     const centerLon = -rotation[0];
     const centerLat = -rotation[1];
     // Approximate view bounds in degrees (generous padding)
-    const viewLonSpan = 180 / zoom + 20;
-    const viewLatSpan = 90 / zoom + 20;
+    const viewLonSpan = Math.min(220, 180 / zoom + 20);
+    const viewLatSpan = Math.min(120, 90 / zoom + 20);
 
     for (const cluster of worldClusters) {
-      // Fast pre-check: Latitude (no wrapping issues)
-      if (Math.abs(cluster.latitude - centerLat) > viewLatSpan) continue;
+      // In full map mode, rotation is not the camera center; avoid rotation-centered culling.
+      if (progress < 100) {
+        // Fast pre-check: Latitude (no wrapping issues)
+        if (Math.abs(cluster.latitude - centerLat) > viewLatSpan) continue;
 
-      // Fast pre-check: Longitude (handle wrapping)
-      let lonDiff = Math.abs(cluster.longitude - centerLon);
-      if (lonDiff > 180) lonDiff = 360 - lonDiff;
-      if (lonDiff > viewLonSpan) continue;
+        // Fast pre-check: Longitude (handle wrapping)
+        let lonDiff = Math.abs(cluster.longitude - centerLon);
+        if (lonDiff > 180) lonDiff = 360 - lonDiff;
+        if (lonDiff > viewLonSpan) continue;
+      }
 
       const coords = projection([cluster.longitude, cluster.latitude]);
       if (!coords || isNaN(coords[0]) || isNaN(coords[1])) continue;
@@ -884,142 +891,17 @@ export function GlobeVisualization({
 
     const isFullMapMode = progress >= 100;
 
-
-    // Draw Map (Tiles or Texture)
-    if (mapVariant === 'openstreetmap') {
-      if (!isFullMapMode) {
-        // In globe mode for OSM, we just render transparent/outline or could render a static image
-        // For now, we fall back to just clearing the canvas (handled above).
-        // If you want a globe map, we'd need a different texture.
-        return;
-      }
-
-      if (!showOsmTiles) {
-        return;
-      }
-
-      // OSM Tile Rendering (Mercator)
-      // 1. Calculate Zoom Level
-      const projectionScale = (projection as d3.GeoProjection).scale();
-      // d3 mercator scale = 256 / (2*PI) * 2^z
-      // s = 256 * 2^z / (2*PI)  =>  s * 2*PI / 256 = 2^z
-      const z = Math.max(0, Math.floor(Math.log2(projectionScale * 2 * Math.PI / 256)));
-      const renderZ = Math.max(0, (isDragging || isZooming) ? z - 1 : z);
-      const zoomPower = Math.pow(2, renderZ);
-
-      // 2. Visible Bounds
-      // Invert screen corners to get Lon/Lat
-      const tl = projectionInvert([0, 0]);
-      const br = projectionInvert([width, height]);
-
-      if (!tl || !br) return;
-
-      const [lon1, lat1] = tl;
-      const [lon2, lat2] = br;
-
-      // Convert to Tile Coordinates
-      const tileX = (lon: number) => (lon + 180) / 360 * zoomPower;
-      const tileY = (lat: number) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * zoomPower;
-
-      const minX = Math.floor(Math.min(tileX(lon1), tileX(lon2)));
-      const maxX = Math.floor(Math.max(tileX(lon1), tileX(lon2)));
-      const minY = Math.floor(Math.min(tileY(lat1), tileY(lat2)));
-      const maxY = Math.floor(Math.max(tileY(lat1), tileY(lat2)));
-
-      // 3. Draw Tiles
-      const tileSize = 256;
-      // We need to calculate where to draw the tile (0,0) based on projection
-      // Or just map tile coordinates to screen coordinates
-
-      // Simpler: iterate tiles, calculate their screen position using projection
-      // But projection gives pixel for center?
-      // Better: Use the d3 transform directly.
-      // x_screen = (x_tile - tx) * k + cx ...
-
-      // Let's use the layout math:
-      // scale k = 256 * 2^z / (2*PI) -- wait, d3 scale matches this?
-      // Actually projection(lon,lat) gives exact screen pixels.
-      // So let's project the Top-Left of each tile to find where to draw it.
-
-      ctx.save();
-
-      for (let x = minX; x <= maxX; x++) {
-        for (let y = minY; y <= maxY; y++) {
-          // Wrap x for world repeating?
-          // Render tiles
-          const wrappedX = x % zoomPower;
-          const normX = wrappedX < 0 ? wrappedX + zoomPower : wrappedX;
-
-          const url = `https://tile.openstreetmap.org/${renderZ}/${normX}/${y}.png`;
-
-          // Check cache
-          let img = tileCache.current.get(url);
-          if (!img) {
-            img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = url;
-            img.onload = () => {
-              // Force re-render if visible?
-              // We rely on the fact that subsequent frames (interacting) will show it.
-              // Ideally we force update:
-              // setTextureReady(prev => !prev); // HACK to force update
-            };
-            tileCache.current.set(url, img);
-          }
-
-          if (img.complete && img.naturalWidth > 0) {
-            // Calculate position
-            // Tile coord (x, y) corresponds to lon/lat:
-            // Convert back to lon/lat is expensive inside loop? 
-            // No, we can project tile coordinates directly if we know the transform.
-
-            // Let's deduce screen rect of the tile.
-            // We know tile (x,y) at zoom z covers conceptual pixel space:
-            // X: x*256 to (x+1)*256
-            // Y: y*256 to (y+1)*256
-            // But this is in "Tile Pixel Space".
-
-            // D3 Mercator projection pixel space:
-            // [x, y] = projection([lon, lat])
-
-            // We can just project the Top-Left corner of the tile.
-            const lon = (x / zoomPower) * 360 - 180;
-            const lat_rad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / zoomPower)));
-            const lat = lat_rad * 180 / Math.PI;
-
-            const [px, py] = projection([lon, lat]) || [0, 0];
-
-            // Calculate size? 
-            // Size varies if z is not integer matching projection scale?
-            // But we chose z based on projection scale.
-            // scale factor = projection.scale() * 2 * PI / (256 * 2^z)
-            // This factor applies to the 256px tile.
-            const scaleFactor = (projectionScale * 2 * Math.PI) / (zoomPower * 256);
-            const size = 256 * scaleFactor;
-
-            // Fix for floating point gaps: add small overlap?
-            ctx.drawImage(img, px, py, size + 0.5, size + 0.5);
-          }
-        }
-      }
-      ctx.restore();
-      return;
-    }
-
     if (mapVariant === 'outline' || !textureReady) return;
 
     const textureImage = textureRef.current;
     if (!textureImage) return;
 
-
-
-    // FAST PATH: For flat map mode, use direct canvas drawImage (instant, 60fps)
+    // FAST PATH: For flat map mode, use direct canvas drawImage
     if (isFullMapMode) {
       ctx.save();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
 
-      // Calculate draw size based on zoom
       const drawWidth = width * zoom;
       const drawHeight = (drawWidth / textureImage.width) * textureImage.height;
       const drawX = (width - drawWidth) / 2 + mapOffset[0];
@@ -1031,122 +913,6 @@ export function GlobeVisualization({
       return;
     }
 
-    // GLOBE/TRANSITION MODE: Need projection-based rendering
-    if (!projection || !projectionInvert) return;
-
-    // ... (Existing globe render logic reused for satellite fallback if user manually adds it back?)
-    // Actually, since we removed satellite button, this code is dead unless mapVariant is satellite.
-    // We'll keep it as is, it won't run.
-
-    const invert = projectionInvert;
-    const texture = textureDataRef.current;
-
-    // If pixel data isn't accessible, fallback to a flat map draw when in map view.
-    // ...
-    // Copying existing logic just to close the function
-    if (!texture) {
-      // ...
-      return;
-    }
-
-    // Keeping the rest of the file structure intact by not replacing too much if not needed.
-    // But I need to close the effect.
-    // The Original Code continued... 
-    // I will just use the original code logic for the rest.
-    // wait, I can't leave "..." in replacement.
-
-    // I end my replacement block here? No, I need to match the closing of the effect.
-    // The original code was:
-    // 642:    if (mapVariant !== 'satellite' || !textureReady) return;
-    // ...
-    // 756:  }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging, isZooming, showOsmTiles]);
-
-    // My replacement replaces from 642.
-    // I'll paste the original globe rendering logic (which is fine to keep, it just won't trigger).
-
-    const invert2 = projectionInvert;
-    const texture2 = textureDataRef.current;
-
-    if (!texture2) {
-      if (progress >= 95 && textureImage) {
-        ctx.globalAlpha = 0.95;
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(textureImage, 0, 0, width, height);
-      }
-      return;
-    }
-
-    const isGlobeView = progress < 95;
-    if (isGlobeView) {
-      const radius = (projection as any).scale?.() ?? Math.min(width, height) * 0.4;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2);
-      ctx.clip();
-    }
-
-    let sampleStep: number;
-    if (isDragging) {
-      sampleStep = 8;
-    } else if (zoom >= 4) {
-      sampleStep = 2;
-    } else if (zoom >= 2) {
-      sampleStep = 3;
-    } else if (zoom >= 1) {
-      sampleStep = 4;
-    } else {
-      sampleStep = 6;
-    }
-    const sampleWidth = Math.ceil(width / sampleStep);
-    const sampleHeight = Math.ceil(height / sampleStep);
-
-    let rasterCanvas = rasterCanvasRef.current;
-    if (!rasterCanvas) {
-      rasterCanvas = document.createElement('canvas');
-      rasterCanvasRef.current = rasterCanvas;
-    }
-
-    if (rasterCanvas.width !== sampleWidth || rasterCanvas.height !== sampleHeight) {
-      rasterCanvas.width = sampleWidth;
-      rasterCanvas.height = sampleHeight;
-    }
-
-    const rasterCtx = rasterCanvas.getContext('2d');
-    if (!rasterCtx) return;
-
-    const imageData = rasterCtx.createImageData(sampleWidth, sampleHeight);
-    const data = imageData.data;
-
-    for (let sy = 0; sy < sampleHeight; sy++) {
-      const y = (sy + 0.5) * sampleStep;
-      for (let sx = 0; sx < sampleWidth; sx++) {
-        const x = (sx + 0.5) * sampleStep;
-        const lonLat = invert2([x, y]);
-        if (!lonLat) continue;
-        const [lon, lat] = lonLat;
-        const u = (lon + 180) / 360;
-        const v = (90 - lat) / 180;
-        if (u < 0 || u > 1 || v < 0 || v > 1) continue;
-
-        const tx = Math.min(texture2.width - 1, Math.max(0, Math.floor(u * texture2.width)));
-        const ty = Math.min(texture2.height - 1, Math.max(0, Math.floor(v * texture2.height)));
-        const tIndex = (ty * texture2.width + tx) * 4;
-        const idx = (sy * sampleWidth + sx) * 4;
-
-        data[idx] = texture2.data[tIndex];
-        data[idx + 1] = texture2.data[tIndex + 1];
-        data[idx + 2] = texture2.data[tIndex + 2];
-        data[idx + 3] = 220;
-      }
-    }
-
-    rasterCtx.putImageData(imageData, 0, 0);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(rasterCanvas, 0, 0, width, height);
-
-    if (isGlobeView) {
-      ctx.restore();
-    }
   }, [dimensions, mapVariant, progress, zoom, mapOffset, projection, projectionInvert, textureReady, isDragging]);
 
   // Render camera markers on canvas
@@ -1157,63 +923,82 @@ export function GlobeVisualization({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { width, height } = dimensions;
-    const dpr = window.devicePixelRatio || 1;
+    const schedule = () => {
+      if (markerRenderRafRef.current !== null) return;
+      markerRenderRafRef.current = requestAnimationFrame(() => {
+        markerRenderRafRef.current = null;
+        markerRenderPendingRef.current = false;
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+        const { width, height } = dimensions;
+        const dpr = window.devicePixelRatio || 1;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+          canvas.width = width * dpr;
+          canvas.height = height * dpr;
+          canvas.style.width = `${width}px`;
+          canvas.style.height = `${height}px`;
+        }
 
-    const markerScale = Math.max(0.4, markerSize);
-    const glowScale = Math.max(0, glowIntensity);
-    const glowAlphaStrong = Math.min(1, 0.4 * glowScale);
-    const glowAlphaMid = Math.min(1, 0.12 * glowScale);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
 
-    // Draw clusters/cameras
-    visibleClusters.forEach(({ cluster, x, y }) => {
-      const isHovered = hoveredCluster?.id === cluster.id;
-      // Logarithmic scaling for radius: visibly larger for more items, but capped
-      const baseRadius = cluster.count === 1 ? 3 : Math.min(10 + Math.log10(cluster.count) * 3, 25);
-      const scaledBase = baseRadius * markerScale;
-      const radius = (isHovered ? scaledBase * 1.2 : scaledBase) * Math.min(zoom, 1.5);
+        const markerScale = Math.max(0.4, markerSize);
+        const glowScale = Math.max(0, glowIntensity);
+        const glowAlphaStrong = Math.min(1, 0.4 * glowScale);
+        const glowAlphaMid = Math.min(1, 0.12 * glowScale);
 
-      if (glowScale > 0.02) {
-        const glowRadius = radius * 3 * glowScale;
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
-        gradient.addColorStop(0, `rgba(255, 248, 220, ${glowAlphaStrong})`);
-        gradient.addColorStop(0.5, `rgba(255, 248, 220, ${glowAlphaMid})`);
-        gradient.addColorStop(1, 'rgba(255, 248, 220, 0)');
+        const suppressLabels = isDraggingRef.current || isAnimating;
 
-        ctx.beginPath();
-        ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
+        // Draw clusters/cameras
+        visibleClusters.forEach(({ cluster, x, y }) => {
+          const isHovered = hoveredClusterRef.current?.id === cluster.id;
+          const baseRadius = cluster.count === 1 ? 3 : Math.min(10 + Math.log10(cluster.count) * 3, 25);
+          const scaledBase = baseRadius * markerScale;
+          const radius = (isHovered ? scaledBase * 1.2 : scaledBase) * Math.min(zoom, 1.5);
+
+          if (glowScale > 0.02) {
+            const glowRadius = radius * 3 * glowScale;
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowRadius);
+            gradient.addColorStop(0, `rgba(255, 248, 220, ${glowAlphaStrong})`);
+            gradient.addColorStop(0.5, `rgba(255, 248, 220, ${glowAlphaMid})`);
+            gradient.addColorStop(1, 'rgba(255, 248, 220, 0)');
+
+            ctx.beginPath();
+            ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+          }
+
+          ctx.beginPath();
+          ctx.arc(x, y, radius, 0, Math.PI * 2);
+          ctx.fillStyle = isHovered ? 'rgba(255, 248, 220, 0.9)' : 'rgba(255, 248, 220, 0.6)';
+          ctx.fill();
+
+          if (!suppressLabels && showClusterLabels && cluster.count > 1 && radius > 8) {
+            const fontSize = Math.min(radius * 0.9, 12);
+            ctx.font = `600 ${fontSize}px JetBrains Mono`;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(cluster.count), x, y);
+          }
+        });
+      });
+    };
+
+    if (!markerRenderPendingRef.current) {
+      markerRenderPendingRef.current = true;
+      schedule();
+    }
+
+    return () => {
+      if (markerRenderRafRef.current !== null) {
+        cancelAnimationFrame(markerRenderRafRef.current);
+        markerRenderRafRef.current = null;
       }
-
-      // Core marker
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isHovered ? 'rgba(255, 248, 220, 0.9)' : 'rgba(255, 248, 220, 0.6)';
-      ctx.fill();
-
-      // Cluster count
-      // Cluster count - show exact count
-      if (showClusterLabels && cluster.count > 1 && radius > 8) {
-        // Adjust font size to fit inside circle
-        const fontSize = Math.min(radius * 0.9, 12);
-        ctx.font = `600 ${fontSize}px JetBrains Mono`;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(cluster.count), x, y);
-      }
-    });
-
-  }, [visibleClusters, dimensions, hoveredCluster, worldData, projection, zoom, markerSize, showClusterLabels, glowIntensity]);
+      markerRenderPendingRef.current = false;
+    };
+  }, [visibleClusters, dimensions, worldData, projection, zoom, markerSize, showClusterLabels, glowIntensity, isAnimating]);
 
   // Handle canvas mouse events
   const handleCanvasMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1222,8 +1007,6 @@ export function GlobeVisualization({
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const clientX = event.clientX;
-    const clientY = event.clientY;
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     hoverPendingMouseRef.current = [x, y];
@@ -1249,12 +1032,25 @@ export function GlobeVisualization({
 
         if (hoveredClusterRef.current?.id !== found?.id) {
           hoveredClusterRef.current = found;
-          setHoveredCluster(found);
-          onClusterSelect?.(found ?? null);
+          const now = performance.now();
+          if (now - lastHoverUpdateRef.current > 60) {
+            lastHoverUpdateRef.current = now;
+            setHoveredCluster(found);
+            onClusterSelect?.(found ?? null);
+          }
         }
 
         if (found) {
-          setTooltipPos({ x: clientX, y: clientY });
+          const anchor = visibleClusters.find((v) => v.cluster.id === found?.id);
+          if (anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y)) {
+            const absX = rect.left + anchor.x;
+            const absY = rect.top + anchor.y;
+            tooltipPosRef.current = { x: absX, y: absY };
+            const now = performance.now();
+            if (now - lastHoverUpdateRef.current > 60) {
+              setTooltipPos(tooltipPosRef.current);
+            }
+          }
         }
 
         hoverPendingMouseRef.current = null;
@@ -1274,6 +1070,8 @@ export function GlobeVisualization({
       setHoveredCluster(null);
       onClusterSelect?.(null);
     }
+    tooltipPosRef.current = { x: 0, y: 0 };
+    setTooltipPos(tooltipPosRef.current);
   }, [onClusterSelect]);
 
   // Handle click on camera
@@ -1401,7 +1199,7 @@ export function GlobeVisualization({
 
       {/* Cluster tooltip */}
       <AnimatePresence>
-        {hoveredCluster && !isDragging && (
+        {hoveredCluster && !isDragging && tooltipPos.x > 0 && tooltipPos.y > 0 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}

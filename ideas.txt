@@ -1,0 +1,31 @@
+ideas:
+[-] mobile support
+[ ] make it into electron app
+[ ] more details to display about cams
+[X] search cams by name/city/country
+[ ] favorites (star cams) + "favorites" filter
+[ ] share link to a cam (copy URL) + open to that cam on load
+[ ] show camera live/last-updated timestamp + uptime badge
+[ ] show source + license/attribution per cam
+[X] map clustering + progressive reveal as you zoom
+[ ] "near me" button (use geolocation) + distance sorting
+[ ] quick sort (closest, newest, most popular)
+[ ] save filters in URL query params (permalinkable view)
+[ ] recent history (last opened cams)
+[X] keyboard shortcuts (search focus, next/prev cam)
+[ ] globe double-click to zoom, smooth inertia toggle
+[X] performance mode (lower globe quality, fewer points)
+[ ] offline-friendly cache for metadata (service worker)
+[ ] error states: cam unreachable placeholder + retry
+[ ] loading skeletons for cam detail panel
+[ ] screenshot/share image of current globe view
+[ ] time-of-day filter (if metadata exists) / night-mode
+[ ] region presets (EU/NA/Asia) + custom regions
+[ ] multi-select tags (traffic, nature, city, beach, etc.)
+[ ] moderation/report incorrect cam location
+[ ] analytics/debug overlay (fps, points rendered)
+
+legend:
+[X] completed
+[-] not completed but started
+[ ] didnt start with it yet

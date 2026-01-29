@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ParallaxProvider } from '@/components/ParallaxProvider';
 import { GlobeVisualization } from '@/components/GlobeVisualization';
@@ -9,7 +9,6 @@ import { RegionFilters } from '@/components/RegionFilters';
 import { CommandSearch } from '@/components/CommandSearch';
 import { CameraDetailModal } from '@/components/CameraDetailModal';
 import { QuickFilters } from '@/components/QuickFilters';
-import { MiniMap } from '@/components/MiniMap';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import {
   Drawer,
@@ -28,7 +27,42 @@ import {
 } from '@/components/VisualOverlays';
 import cameraDataRaw from '@/data/camera_data.json';
 import { CameraData } from '@/types/camera';
-import { Layers, Search, Sliders, X } from 'lucide-react';
+import { Layers, Search, Sliders, X, Star } from 'lucide-react';
+
+const FAVORITES_STORAGE_KEY = 'globecam:favorites';
+const RECENTS_STORAGE_KEY = 'globecam:recents';
+
+function readStringArrayStorage(key: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) return parsed;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStringArrayStorage(key: string, value: string[]) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function parseCsvParam(value: string | null): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((v) => decodeURIComponent(v.trim()))
+    .filter(Boolean);
+}
+
+function serializeCsvParam(values: string[]): string {
+  return values.map((v) => encodeURIComponent(v)).join(',');
+}
 
 // Helper function to determine continent from country
 function getContinent(country: string): string {
@@ -285,17 +319,41 @@ export default function Index() {
     })) as CameraData[];
   }, []);
 
+  const initialQueryParams = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search);
+  }, []);
+
+  const initialSelectedRegions = useMemo(() => {
+    return parseCsvParam(initialQueryParams?.get('regions') ?? null);
+  }, [initialQueryParams]);
+
+  const initialSelectedManufacturers = useMemo(() => {
+    return parseCsvParam(initialQueryParams?.get('mfr') ?? null);
+  }, [initialQueryParams]);
+
+  const initialSearchQuery = useMemo(() => {
+    return initialQueryParams?.get('q') ?? '';
+  }, [initialQueryParams]);
+
+  const initialSelectedCameraId = useMemo(() => {
+    return initialQueryParams?.get('cam') ?? null;
+  }, [initialQueryParams]);
+
   const stats = useMemo(() => getCameraStats(allCameras), [allCameras]);
   const maxVisibleNodesMax = Math.max(500, Math.min(5000, allCameras.length));
 
-  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
-  const [selectedCamera, setSelectedCamera] = useState<CameraData | null>(null);
-  const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>(initialSelectedRegions);
+  const [selectedCamera, setSelectedCamera] = useState<CameraData | null>(() => {
+    if (!initialSelectedCameraId) return null;
+    return allCameras.find((c) => c.id === initialSelectedCameraId) ?? null;
+  });
+  const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(initialSelectedManufacturers);
   const [currentRotation, setCurrentRotation] = useState<[number, number]>([0, 0]);
   const [currentProgress, setCurrentProgress] = useState(100);
   const [fps, setFps] = useState(60);
   const [isConnected, setIsConnected] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHudOpen, setIsHudOpen] = useState(false);
@@ -307,6 +365,63 @@ export default function Index() {
   const [markerSize, setMarkerSize] = useState(1);
   const [showClusterLabels, setShowClusterLabels] = useState(true);
   const [glowIntensity, setGlowIntensity] = useState(1);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return readStringArrayStorage(FAVORITES_STORAGE_KEY);
+  });
+
+  const [recentIds, setRecentIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return readStringArrayStorage(RECENTS_STORAGE_KEY);
+  });
+
+  const isSelectedFavorite = useMemo(() => {
+    if (!selectedCamera?.id) return false;
+    return favoriteIds.includes(selectedCamera.id);
+  }, [favoriteIds, selectedCamera?.id]);
+
+  const toggleFavoriteSelected = useCallback(() => {
+    const id = selectedCamera?.id;
+    if (!id) return;
+    setFavoriteIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      writeStringArrayStorage(FAVORITES_STORAGE_KEY, next);
+      return next;
+    });
+  }, [selectedCamera?.id]);
+
+  // Sync selected camera + filters to URL for shareable links.
+  // We do this in a minimal way (replaceState) to avoid full page reloads.
+  const syncUrl = useCallback(
+    (next: {
+      camId: string | null;
+      q: string;
+      regions: string[];
+      mfr: string[];
+    }) => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+
+      if (next.camId) params.set('cam', next.camId);
+      else params.delete('cam');
+
+      if (next.q.trim()) params.set('q', next.q.trim());
+      else params.delete('q');
+
+      if (next.regions.length > 0) params.set('regions', serializeCsvParam(next.regions));
+      else params.delete('regions');
+
+      if (next.mfr.length > 0) params.set('mfr', serializeCsvParam(next.mfr));
+      else params.delete('mfr');
+
+      const qs = params.toString();
+      const url = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
+      window.history.replaceState(null, '', url);
+    },
+    []
+  );
 
   // Get unique manufacturers
   const manufacturers = useMemo(() => {
@@ -317,6 +432,11 @@ export default function Index() {
   // Filter cameras by selected regions and manufacturers
   const filteredCameras = useMemo(() => {
     let filtered = allCameras;
+
+    if (favoritesOnly) {
+      const favSet = new Set(favoriteIds);
+      filtered = filtered.filter((cam) => !!cam.id && favSet.has(cam.id));
+    }
 
     if (selectedRegions.length > 0) {
       filtered = filtered.filter(cam => selectedRegions.includes(cam.continent));
@@ -345,7 +465,16 @@ export default function Index() {
     }
 
     return filtered;
-  }, [allCameras, selectedRegions, selectedManufacturers, searchQuery]);
+  }, [allCameras, favoriteIds, favoritesOnly, selectedRegions, selectedManufacturers, searchQuery]);
+
+  const handleCopyShareLink = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Get regions for filter
   const regions = useMemo(() => {
@@ -355,32 +484,68 @@ export default function Index() {
   }, [stats]);
 
   const handleRegionToggle = useCallback((region: string) => {
-    setSelectedRegions(prev =>
-      prev.includes(region)
-        ? prev.filter(r => r !== region)
-        : [...prev, region]
-    );
-  }, []);
+    setSelectedRegions((prev) => {
+      const next = prev.includes(region) ? prev.filter((r) => r !== region) : [...prev, region];
+      syncUrl({
+        camId: selectedCamera?.id ?? null,
+        q: searchQuery,
+        regions: next,
+        mfr: selectedManufacturers,
+      });
+      return next;
+    });
+  }, [searchQuery, selectedCamera?.id, selectedManufacturers, syncUrl]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
-  }, []);
+    syncUrl({
+      camId: selectedCamera?.id ?? null,
+      q: query,
+      regions: selectedRegions,
+      mfr: selectedManufacturers,
+    });
+  }, [selectedCamera?.id, selectedManufacturers, selectedRegions, syncUrl]);
 
   const handleCameraSelect = useCallback((camera: CameraData | null) => {
     setSelectedCamera(camera);
-  }, []);
+    const id = camera?.id ?? null;
+    if (id) {
+      setRecentIds((prev) => {
+        const next = [id, ...prev.filter((x) => x !== id)].slice(0, 20);
+        writeStringArrayStorage(RECENTS_STORAGE_KEY, next);
+        return next;
+      });
+    }
+    syncUrl({
+      camId: id,
+      q: searchQuery,
+      regions: selectedRegions,
+      mfr: selectedManufacturers,
+    });
+  }, [searchQuery, selectedManufacturers, selectedRegions, syncUrl]);
 
   const handleCloseModal = useCallback(() => {
     setSelectedCamera(null);
-  }, []);
+    syncUrl({
+      camId: null,
+      q: searchQuery,
+      regions: selectedRegions,
+      mfr: selectedManufacturers,
+    });
+  }, [searchQuery, selectedManufacturers, selectedRegions, syncUrl]);
 
-  const handleManufacturerToggle = useCallback((manufacturer: string) => {
-    setSelectedManufacturers(prev =>
-      prev.includes(manufacturer)
-        ? prev.filter(m => m !== manufacturer)
-        : [...prev, manufacturer]
-    );
-  }, []);
+  const handleManufacturerToggleWithUrl = useCallback((manufacturer: string) => {
+    setSelectedManufacturers((prev) => {
+      const next = prev.includes(manufacturer) ? prev.filter((m) => m !== manufacturer) : [...prev, manufacturer];
+      syncUrl({
+        camId: selectedCamera?.id ?? null,
+        q: searchQuery,
+        regions: selectedRegions,
+        mfr: next,
+      });
+      return next;
+    });
+  }, [searchQuery, selectedCamera?.id, selectedRegions, syncUrl]);
 
 
 
@@ -404,7 +569,41 @@ export default function Index() {
 
   const handleSearchRegion = useCallback((region: string) => {
     setSearchQuery(region);
-  }, []);
+    syncUrl({
+      camId: selectedCamera?.id ?? null,
+      q: region,
+      regions: selectedRegions,
+      mfr: selectedManufacturers,
+    });
+  }, [selectedCamera?.id, selectedManufacturers, selectedRegions, syncUrl]);
+
+  // Convenience shortcuts (when a camera is selected):
+  // - Ctrl/Cmd+Shift+C copies the current URL (share link)
+  // - F toggles favorite
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      if (!selectedCamera?.id) return;
+
+      const isCopyShare = (e.key === 'C' || e.key === 'c') && (e.ctrlKey || e.metaKey) && e.shiftKey;
+      if (isCopyShare) {
+        e.preventDefault();
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      if ((e.key === 'F' || e.key === 'f') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleFavoriteSelected();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedCamera?.id, toggleFavoriteSelected]);
 
   return (
     <ParallaxProvider>
@@ -414,7 +613,28 @@ export default function Index() {
         <TechLines />
 
         {/* Header */}
-        <Header />
+        <Header
+          rightSlot={
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSearchOpen}
+                className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              >
+                <Search className="w-4 h-4" />
+                Browse
+              </button>
+              <button
+                type="button"
+                onClick={handleSettingsOpen}
+                className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              >
+                <Sliders className="w-4 h-4" />
+                Settings
+              </button>
+            </div>
+          }
+        />
 
         {/* Main globe container */}
         <div className="absolute inset-0 flex items-center justify-center">
@@ -444,51 +664,49 @@ export default function Index() {
 
         {/* HUD Panels */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="pointer-events-none absolute left-3 right-3 top-20 bottom-28 sm:left-6 sm:right-6 sm:top-24 sm:bottom-24 hidden md:flex md:flex-row md:justify-between gap-4 md:gap-6 overflow-y-auto md:overflow-visible">
-            <div className="pointer-events-auto w-full md:w-[260px] md:max-w-[35vw] flex flex-col gap-4 md:max-h-[calc(100vh-140px)] md:overflow-y-auto">
-              <StatsDisplay
-                totalCameras={stats.total}
-                visibleCameras={filteredCameras.length}
-                continents={Object.keys(stats.byContinent).length}
-                countries={Object.keys(stats.byCountry).length}
-              />
-              <RegionFilters
-                regions={regions}
-                selectedRegions={selectedRegions}
-                onRegionToggle={handleRegionToggle}
-              />
-              <QuickFilters
-                manufacturers={manufacturers}
-                selectedManufacturers={selectedManufacturers}
-                onManufacturerToggle={handleManufacturerToggle}
-              />
-            </div>
+          <div className="pointer-events-auto hidden md:block absolute top-24 left-6 bottom-28 z-20 w-[320px]">
+            <div className="space-y-3 h-full overflow-y-auto">
+                <div className="hud-panel corner-accents">
+                  <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-white/80 flex items-center gap-2">
+                      <Star className="w-3 h-3" />
+                      Favorites
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-white/60">
+                      {favoriteIds.length.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="p-3">
+                    <button
+                      type="button"
+                      onClick={() => setFavoritesOnly((v) => !v)}
+                      className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${favoritesOnly ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                    >
+                      <Star className={`w-4 h-4 ${favoritesOnly ? 'text-yellow-400' : ''}`} />
+                      Favorites Only
+                    </button>
+                  </div>
+                </div>
 
-            <div className="pointer-events-auto w-full md:w-[260px] md:max-w-[35vw] flex flex-col gap-4 md:max-h-[calc(100vh-140px)] md:overflow-y-auto">
-              <LiveActivityIndicator
-                online={stats.online}
-                total={stats.total}
-              />
-              <button
-                type="button"
-                onClick={handleSearchOpen}
-                className="hud-panel corner-accents flex items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-              >
-                <Search className="w-4 h-4" />
-                Browse Cameras
-              </button>
-              <button
-                type="button"
-                onClick={handleSettingsOpen}
-                className="hud-panel corner-accents flex items-center gap-2 px-3 py-3 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-              >
-                <Sliders className="w-4 h-4" />
-                Settings
-              </button>
-              <div className="md:mt-auto">
-                <MiniMap rotation={currentRotation} />
-              </div>
+                <RegionFilters
+                  regions={regions}
+                  selectedRegions={selectedRegions}
+                  onRegionToggle={handleRegionToggle}
+                />
+
+                <QuickFilters
+                  manufacturers={manufacturers}
+                  selectedManufacturers={selectedManufacturers}
+                  onManufacturerToggle={handleManufacturerToggleWithUrl}
+                />
             </div>
+          </div>
+
+          <div className="pointer-events-auto hidden md:flex flex-col gap-3 absolute right-6 bottom-28 z-20 w-[320px]">
+            <LiveActivityIndicator
+              online={stats.online}
+              total={stats.total}
+            />
           </div>
 
           <div className="pointer-events-auto md:hidden absolute left-3 right-3 top-20 z-30">
@@ -545,16 +763,16 @@ export default function Index() {
                 </DrawerHeader>
 
                 <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto space-y-3">
+                  <LiveActivityIndicator
+                    online={stats.online}
+                    total={stats.total}
+                  />
+
                   <StatsDisplay
                     totalCameras={stats.total}
                     visibleCameras={filteredCameras.length}
                     continents={Object.keys(stats.byContinent).length}
                     countries={Object.keys(stats.byCountry).length}
-                  />
-
-                  <LiveActivityIndicator
-                    online={stats.online}
-                    total={stats.total}
                   />
 
                   <RegionFilters
@@ -566,10 +784,8 @@ export default function Index() {
                   <QuickFilters
                     manufacturers={manufacturers}
                     selectedManufacturers={selectedManufacturers}
-                    onManufacturerToggle={handleManufacturerToggle}
+                    onManufacturerToggle={handleManufacturerToggleWithUrl}
                   />
-
-                  <MiniMap rotation={currentRotation} />
                 </div>
               </DrawerContent>
             </Drawer>
@@ -645,6 +861,9 @@ export default function Index() {
         <CameraDetailModal
           camera={selectedCamera}
           onClose={handleCloseModal}
+          onToggleFavorite={toggleFavoriteSelected}
+          isFavorite={isSelectedFavorite}
+          onCopyShareLink={handleCopyShareLink}
         />
       </div>
     </ParallaxProvider>

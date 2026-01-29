@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Search, X, MapPin, Grid, List, Filter,
   ChevronRight, Circle, Activity, Globe, LayoutGrid
@@ -24,14 +24,23 @@ export function CommandSearch({
   const [query, setQuery] = useState('');
   const [selectedContinent, setSelectedContinent] = useState<string | null>('All Cameras');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [shouldRender, setShouldRender] = useState(false);
 
   // Reset state when opening
   useEffect(() => {
     if (isOpen) {
+      setShouldRender(true);
       setQuery('');
       setSelectedContinent('All Cameras');
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    if (!shouldRender) return;
+    const t = window.setTimeout(() => setShouldRender(false), 250);
+    return () => window.clearTimeout(t);
+  }, [isOpen, shouldRender]);
 
   // Handle Escape key
   useEffect(() => {
@@ -44,6 +53,10 @@ export function CommandSearch({
 
   // Derive stats and filters
   const { filteredCameras, continents } = useMemo(() => {
+    if (!shouldRender) {
+      return { filteredCameras: [], continents: [] as string[], stats: { 'All Cameras': cameras.length } };
+    }
+
     const uniqueContinents = new Set(cameras.map(c => c.continent).filter(Boolean));
     const stats: Record<string, number> = { 'All Cameras': cameras.length };
 
@@ -79,30 +92,45 @@ export function CommandSearch({
     }
 
     return { filteredCameras: filtered, continents: sortedContinents, stats };
-  }, [cameras, query, selectedContinent]);
+  }, [cameras, query, selectedContinent, shouldRender]);
+
+  const isInteractive = isOpen && shouldRender;
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* BACKDROP */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50"
-            onClick={onClose}
-          />
+    <div
+      className={cn(
+        'fixed inset-0 z-50',
+        isInteractive ? 'pointer-events-auto' : 'pointer-events-none',
+      )}
+      aria-hidden={!isInteractive}
+    >
+      {/* BACKDROP */}
+      <motion.div
+        initial={false}
+        animate={{ opacity: isInteractive ? 1 : 0 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className={cn(
+          'absolute inset-0 bg-background/60 backdrop-blur-sm',
+          isInteractive ? 'pointer-events-auto' : 'pointer-events-none',
+        )}
+        onClick={isInteractive ? onClose : undefined}
+      />
 
-          {/* WINDOW CONTAINER */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 pointer-events-none">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="w-full max-w-[1600px] h-full max-h-[90vh] bg-[#0a0a0a]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
-            >
+      {/* WINDOW CONTAINER */}
+      <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-8 pointer-events-none">
+        <motion.div
+          initial={false}
+          animate={
+            isInteractive
+              ? { opacity: 1, scale: 1, y: 0 }
+              : { opacity: 0, scale: 0.98, y: 12 }
+          }
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className={cn(
+            'w-full max-w-[1600px] h-full max-h-[90vh] bg-[#0a0a0a]/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto',
+            isInteractive ? 'pointer-events-auto' : 'pointer-events-none',
+          )}
+        >
               {/* HEADER SECTION */}
               <div className="flex-none px-4 py-4 sm:px-6 sm:py-5 border-b border-white/10 bg-black/20">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6 mb-4 sm:mb-6">
@@ -238,11 +266,9 @@ export function CommandSearch({
                   )}
                 </div>
               </div>
-            </motion.div>
-          </div>
-        </>
-      )}
-    </AnimatePresence>
+        </motion.div>
+      </div>
+    </div>
   );
 }
 
