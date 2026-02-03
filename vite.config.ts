@@ -7,6 +7,7 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 export default defineConfig(({ mode }) => ({
   define: {
     CESIUM_BASE_URL: JSON.stringify("/cesium"),
+    'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString()),
   },
   server: {
     host: "::",

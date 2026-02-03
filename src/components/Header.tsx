@@ -6,6 +6,14 @@ interface HeaderProps {
 }
 
 export function Header({ rightSlot }: HeaderProps) {
+  const startedAt = (() => {
+    const v = (import.meta as any).env?.VITE_BUILD_TIME as string | undefined;
+    if (v) return v;
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}.${pad(d.getHours())}.${pad(d.getMinutes())}`;
+  })();
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -33,7 +41,7 @@ export function Header({ rightSlot }: HeaderProps) {
               Global Vision
             </h1>
             <p className="font-mono text-[9px] sm:text-[10px] text-white/80 uppercase tracking-widest">
-              Surveillance Network v2.4
+              Surveillance Network v{startedAt}
             </p>
           </div>
         </div>
