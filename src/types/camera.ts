@@ -11,6 +11,9 @@ export interface CameraData {
   manufacturer: string;
   image_url: string;
   page_url: string;
+  source?: string;
+  network_key?: string;
+  access_level?: 'public' | 'restricted';
 }
 
 export interface CameraCluster {

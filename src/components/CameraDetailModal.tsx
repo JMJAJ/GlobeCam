@@ -1,17 +1,65 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, MapPin, Building2, Radio, Calendar, Star, Link as LinkIcon } from 'lucide-react';
+import { X, ExternalLink, MapPin, Building2, Radio, Calendar, Star, Link as LinkIcon, Network, Shield, Copy } from 'lucide-react';
 import { CameraData } from '@/types/camera';
 
 interface CameraDetailModalProps {
   camera: CameraData | null;
+  allCameras?: CameraData[];
   onClose: () => void;
+  onSelectCamera?: (camera: CameraData) => void;
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
   onCopyShareLink?: () => void;
 }
 
-export function CameraDetailModal({ camera, onClose, onToggleFavorite, isFavorite, onCopyShareLink }: CameraDetailModalProps) {
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
+}
+
+export function CameraDetailModal({ camera, allCameras, onClose, onSelectCamera, onToggleFavorite, isFavorite, onCopyShareLink }: CameraDetailModalProps) {
   if (!camera) return null;
+
+  const relatedCameras = (() => {
+    if (!allCameras || !camera.network_key) return [] as CameraData[];
+    return allCameras
+      .filter((c) => c.id !== camera.id && c.network_key === camera.network_key)
+      .slice(0, 6);
+  })();
+
+  const locationRelatedCameras = (() => {
+    if (!allCameras) return [] as CameraData[];
+
+    const round3 = (n: number) => Math.round(n * 1000) / 1000;
+    const latKey = round3(camera.latitude);
+    const lonKey = round3(camera.longitude);
+
+    return allCameras
+      .filter((c) => c.id !== camera.id)
+      .filter((c) => c.country === camera.country)
+      .filter((c) => round3(c.latitude) === latKey && round3(c.longitude) === lonKey)
+      .slice(0, 6);
+  })();
+
+  const relatedSection = relatedCameras.length > 0
+    ? { title: 'Same network', items: relatedCameras, showDistance: false }
+    : locationRelatedCameras.length > 0
+      ? { title: 'Same location', items: locationRelatedCameras, showDistance: true }
+      : null;
+
+  const canShowNetwork = !!camera.network_key;
+  const canShowSource = typeof camera.source === 'string' && camera.source.trim().length > 0;
+  const accessLabel = camera.access_level === 'restricted' ? 'Restricted' : 'Public';
 
   return (
     <AnimatePresence>
@@ -104,6 +152,25 @@ export function CameraDetailModal({ camera, onClose, onToggleFavorite, isFavorit
                   label="Continent"
                   value={camera.continent}
                 />
+                {canShowSource && (
+                  <InfoItem
+                    icon={<Radio className="w-3.5 h-3.5" />}
+                    label="Source"
+                    value={camera.source as string}
+                  />
+                )}
+                {canShowNetwork && (
+                  <InfoItem
+                    icon={<Network className="w-3.5 h-3.5" />}
+                    label="Network"
+                    value={camera.network_key as string}
+                  />
+                )}
+                <InfoItem
+                  icon={<Shield className="w-3.5 h-3.5" />}
+                  label="Access"
+                  value={accessLabel}
+                />
               </div>
               
               {/* Coordinates */}
@@ -120,6 +187,93 @@ export function CameraDetailModal({ camera, onClose, onToggleFavorite, isFavorit
                   </span>
                 </div>
               </div>
+
+              {/* Links */}
+              <div className="p-3 bg-secondary/30 rounded-sm border border-border/50 space-y-2">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
+                  Links
+                </span>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-xs text-muted-foreground truncate">Preview</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(camera.image_url);
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className="shrink-0 hud-panel corner-accents flex items-center gap-2 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-xs text-muted-foreground truncate">Source</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(camera.page_url);
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      className="shrink-0 hud-panel corner-accents flex items-center gap-2 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Related cameras */}
+              {relatedSection && (
+                <div className="p-3 bg-secondary/30 rounded-sm border border-border/50">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {relatedSection.title}
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {relatedSection.items.length.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {relatedSection.items.map((c) => {
+                      const dist = relatedSection.showDistance
+                        ? haversineKm(
+                            { lat: camera.latitude, lon: camera.longitude },
+                            { lat: c.latitude, lon: c.longitude }
+                          )
+                        : null;
+
+                      return (
+                        <button
+                          key={c.id ?? `${c.page_url}|${c.image_url}`}
+                          type="button"
+                          onClick={() => {
+                            if (!onSelectCamera) return;
+                            onSelectCamera(c);
+                          }}
+                          className="w-full text-left hud-panel corner-accents px-3 py-2 font-mono text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                          disabled={!onSelectCamera}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate">{c.city}</span>
+                            <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                              {dist !== null ? `${dist.toFixed(1)} km` : (c.source ?? 'unknown')}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               
               {/* Actions */}
               <div className="flex gap-3">
