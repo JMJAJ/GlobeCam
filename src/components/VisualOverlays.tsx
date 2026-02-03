@@ -6,7 +6,7 @@ export function ScanLinesOverlay() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 1, delay: 0.5 }}
-      className="absolute inset-0 pointer-events-none scan-lines z-30"
+      className="absolute inset-0 pointer-events-none scan-lines z-10"
     />
   );
 }
@@ -17,7 +17,7 @@ export function GridOverlay() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 0.4 }}
       transition={{ duration: 1.5 }}
-      className="absolute inset-0 pointer-events-none grid-overlay z-0"
+      className="absolute inset-0 pointer-events-none grid-overlay -z-10"
     />
   );
 }
@@ -49,7 +49,7 @@ export function CornerDecorations() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.8 + index * 0.1 }}
-          className={`absolute ${corner.position} w-20 h-20 pointer-events-none z-20`}
+          className={`absolute ${corner.position} w-20 h-20 pointer-events-none z-10`}
           style={{ transform: corner.transform }}
         >
           <svg viewBox="0 0 80 80" className="w-full h-full">

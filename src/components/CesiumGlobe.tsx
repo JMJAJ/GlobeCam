@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import {
   BoundingSphere,
   Cartesian2,
@@ -36,20 +36,30 @@ interface CesiumGlobeProps {
   onReadyChange?: (ready: boolean) => void;
 }
 
-export function CesiumGlobe({
-  cameras,
-  onCameraSelect,
-  selectedCameraId,
-  autoRotateEnabled = false,
-  autoRotateSpeed = 1.25,
-  markerSize = 1,
-  cloudsEnabled = true,
-  cloudsOpacity = 0.55,
-  showCountryBorders = false,
-  showNavigationControls = false,
-  viewMode = 'globe',
-  onReadyChange,
-}: CesiumGlobeProps) {
+export interface CesiumGlobeRef {
+  resetHeading: () => void;
+  tiltToTopDown: () => void;
+  rotateByDegrees: (degrees: number) => void;
+  getNavigationState: () => { headingDegrees: number; pitchDegrees: number } | null;
+}
+
+export const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(function CesiumGlobe(
+  {
+    cameras,
+    onCameraSelect,
+    selectedCameraId,
+    autoRotateEnabled = false,
+    autoRotateSpeed = 1.25,
+    markerSize = 1,
+    cloudsEnabled = true,
+    cloudsOpacity = 0.55,
+    showCountryBorders = false,
+    showNavigationControls = false,
+    viewMode = 'globe',
+    onReadyChange,
+  }: CesiumGlobeProps,
+  ref
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const markerLayerRef = useRef<PointPrimitiveCollection | null>(null);
@@ -62,6 +72,70 @@ export function CesiumGlobe({
   const scratchDiffRef = useRef(new Cartesian3());
   const scratchToPointRef = useRef(new Cartesian3());
   const scratchCamUnitRef = useRef(new Cartesian3());
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      resetHeading: () => {
+        const v = viewerRef.current;
+        if (!v) return;
+        try {
+          const pitch = v.camera.pitch;
+          v.camera.setView({
+            orientation: {
+              heading: 0,
+              pitch,
+              roll: 0,
+            },
+          } as any);
+          v.scene.requestRender();
+        } catch {
+          // ignore
+        }
+      },
+      tiltToTopDown: () => {
+        const v = viewerRef.current;
+        if (!v) return;
+        try {
+          v.camera.setView({
+            orientation: {
+              heading: v.camera.heading,
+              pitch: CesiumMath.toRadians(-90),
+              roll: 0,
+            },
+          } as any);
+          v.scene.requestRender();
+        } catch {
+          // ignore
+        }
+      },
+      rotateByDegrees: (degrees: number) => {
+        const v = viewerRef.current;
+        if (!v) return;
+        try {
+          if (viewMode === 'map') return;
+          const radians = CesiumMath.toRadians(degrees);
+          v.camera.rotate(Cartesian3.UNIT_Z, radians);
+          v.scene.requestRender();
+        } catch {
+          // ignore
+        }
+      },
+      getNavigationState: () => {
+        const v = viewerRef.current;
+        if (!v) return null;
+        try {
+          return {
+            headingDegrees: CesiumMath.toDegrees(v.camera.heading),
+            pitchDegrees: CesiumMath.toDegrees(v.camera.pitch),
+          };
+        } catch {
+          return null;
+        }
+      },
+    }),
+    [viewMode]
+  );
 
   useEffect(() => {
     onCameraSelectRef.current = onCameraSelect;
@@ -272,7 +346,7 @@ export function CesiumGlobe({
     // We keep the Viewer option disabled and instead toggle the widget container directly.
     try {
       const navContainer = (v as any).cesiumWidget?.navigationHelpButton?.container as HTMLElement | undefined;
-      if (navContainer) navContainer.style.display = showNavigationControls ? '' : 'none';
+      if (navContainer) navContainer.style.display = 'none';
     } catch {
       // ignore
     }
@@ -437,7 +511,7 @@ export function CesiumGlobe({
 
     try {
       const navContainer = (v as any).cesiumWidget?.navigationHelpButton?.container as HTMLElement | undefined;
-      if (navContainer) navContainer.style.display = showNavigationControls ? '' : 'none';
+      if (navContainer) navContainer.style.display = 'none';
     } catch {
       // ignore
     }
@@ -656,4 +730,4 @@ export function CesiumGlobe({
   return (
     <div className="absolute inset-0" ref={containerRef} />
   );
-}
+});

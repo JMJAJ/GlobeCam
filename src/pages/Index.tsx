@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ParallaxProvider } from '@/components/ParallaxProvider';
-import { CesiumGlobe } from '@/components/CesiumGlobe';
+import { CesiumGlobe, type CesiumGlobeRef } from '@/components/CesiumGlobe';
 import { Header } from '@/components/Header';
 import { StatsDisplay } from '@/components/StatsDisplay';
 import { LiveActivityIndicator } from '@/components/LiveActivityIndicator';
@@ -26,7 +26,7 @@ import {
   TechLines
 } from '@/components/VisualOverlays';
 import { CameraData } from '@/types/camera';
-import { Layers, Search, Sliders, X, Star } from 'lucide-react';
+import { Layers, Search, Sliders, X, Star, Compass } from 'lucide-react';
 
 const FAVORITES_STORAGE_KEY = 'globecam:favorites';
 const RECENTS_STORAGE_KEY = 'globecam:recents';
@@ -339,7 +339,85 @@ function getCameraStats(cameras: CameraData[]) {
   };
 }
 
+function fnv1a32(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function computeCameraId(cam: any, index: number): string {
+  const page = typeof cam?.page_url === 'string' ? cam.page_url : '';
+  const image = typeof cam?.image_url === 'string' ? cam.image_url : '';
+  const key = `${page}|${image}`;
+  if (key !== '|') return `cam-${fnv1a32(key)}`;
+  return `cam-${String(index).padStart(5, '0')}`;
+}
+
+function computeNetworkKey(cam: any): string | null {
+  const page = typeof cam?.page_url === 'string' ? cam.page_url : '';
+  const image = typeof cam?.image_url === 'string' ? cam.image_url : '';
+  const source = typeof cam?.source === 'string' ? cam.source : '';
+
+  const url = page || image;
+  if (!url) return null;
+
+  const src = (source || 'unknown').toLowerCase();
+
+  const normalized = (v: string) => v.replace(/\/+$/, '');
+
+  // Try to extract a per-camera identifier from known providers.
+  // The returned key is *canonical* (based on URL host), so duplicates across sources can match.
+  // This intentionally avoids grouping by hostname alone.
+  const extractCanonicalKey = (u: URL): string | null => {
+    const host = u.hostname.toLowerCase();
+
+    // worldcam.eu: .../<id>-<slug>
+    // Example: https://worldcam.eu/webcams/.../35075-athens-i65-hwy72
+    if (host.endsWith('worldcam.eu')) {
+      const m = u.pathname.match(/\/(\d{3,})-[^/]+$/);
+      if (m?.[1]) return `worldcam:${m[1]}`;
+      return `worldcam:${host}${normalized(u.pathname)}`;
+    }
+
+    // insecam / worldcam.pl: numeric ID often present in path or filename
+    if (host.endsWith('worldcam.pl') || host.endsWith('insecam.org')) {
+      const m = u.pathname.match(/\/(\d{3,})(?:\.[a-zA-Z]+)?$/);
+      if (m?.[1]) return `insecam:${m[1]}`;
+      return `insecam:${host}${normalized(u.pathname)}`;
+    }
+
+    // worldviewstream.com: slug-based pages are typically per-camera.
+    if (host.endsWith('worldviewstream.com')) {
+      const slug = u.pathname.split('/').filter(Boolean).pop();
+      if (slug) return `worldviewstream:${slug}`;
+      return `worldviewstream:${host}${normalized(u.pathname)}`;
+    }
+
+    return null;
+  };
+
+  // Fallback: use full host+path (stricter than host-only), stripped of query/hash.
+  const hostPathKey = (u: URL) => `${u.hostname.toLowerCase()}${normalized(u.pathname)}`;
+
+  try {
+    const u = new URL(url);
+    const canonical = extractCanonicalKey(u);
+    if (canonical) return canonical;
+
+    // Unknown providers: namespace by source to avoid accidental cross-provider collisions.
+    return `${src}:${hostPathKey(u)}`;
+  } catch {
+    // If URL parsing fails, fallback to a normalized raw string.
+    return `${src}:${normalized(url)}`;
+  }
+}
+
 export default function Index() {
+  const globeRef = useRef<CesiumGlobeRef | null>(null);
+  const [navState, setNavState] = useState<{ headingDegrees: number; pitchDegrees: number } | null>(null);
   const [cameraDataRaw, setCameraDataRaw] = useState<any[] | null>(null);
   const [cameraDataError, setCameraDataError] = useState<string | null>(null);
 
@@ -363,7 +441,7 @@ export default function Index() {
   const allCameras = useMemo(() => {
     if (!cameraDataRaw) return [] as CameraData[];
     return (cameraDataRaw as any[]).map((cam: any, index: number) => ({
-      id: `cam-${String(index).padStart(5, '0')}`,
+      id: computeCameraId(cam, index),
       latitude: cam.latitude,
       longitude: cam.longitude,
       continent: getContinent(cam.country),
@@ -373,6 +451,10 @@ export default function Index() {
       manufacturer: cam.manufacturer,
       image_url: cam.image_url,
       page_url: cam.page_url
+      ,
+      source: typeof cam?.source === 'string' ? cam.source : undefined,
+      network_key: computeNetworkKey(cam) ?? undefined,
+      access_level: typeof cam?.source === 'string' && cam.source.toLowerCase() === 'insecam' ? 'restricted' : 'public'
     })) as CameraData[];
   }, [cameraDataRaw]);
 
@@ -442,6 +524,24 @@ export default function Index() {
   const [viewMode, setViewMode] = useState<'globe' | 'map'>(() => persistedSettings?.viewMode ?? 'globe');
   const [isSceneReady, setIsSceneReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  useEffect(() => {
+    if (!showNavigationControls) {
+      setNavState(null);
+      return;
+    }
+
+    let raf = 0;
+    const tick = () => {
+      const next = globeRef.current?.getNavigationState() ?? null;
+      setNavState(next);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [showNavigationControls]);
 
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -745,7 +845,6 @@ export default function Index() {
   return (
     <ParallaxProvider>
       <div className="relative w-screen h-screen bg-background overflow-hidden">
-        {/* Background layers */}
         <GridOverlay />
         <TechLines />
 
@@ -773,10 +872,7 @@ export default function Index() {
               </div>
 
               <div className="hidden md:block w-[320px]">
-                <LiveActivityIndicator
-                  online={stats.online}
-                  total={stats.total}
-                />
+                <LiveActivityIndicator online={stats.online} total={stats.total} />
               </div>
             </div>
           }
@@ -791,6 +887,7 @@ export default function Index() {
             className="relative w-full h-full"
           >
             <CesiumGlobe
+              ref={globeRef}
               cameras={filteredCameras}
               onCameraSelect={handleCameraSelect}
               selectedCameraId={selectedCamera?.id ?? null}
@@ -986,16 +1083,43 @@ export default function Index() {
         <ScanLinesOverlay />
         <VignetteOverlay />
 
-        <div className="hidden sm:block absolute right-6 bottom-24 z-30">
-          <button
-            type="button"
-            onClick={() => setViewMode((prev) => (prev === 'map' ? 'globe' : 'map'))}
-            className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-            aria-label="Toggle map view"
-          >
-            {viewMode === 'map' ? 'Globe' : 'Map'}
-          </button>
-        </div>
+        {isSceneReady && (
+          <div className="hidden sm:block absolute right-6 bottom-16 z-30">
+            <button
+              type="button"
+              onClick={() => setViewMode((prev) => (prev === 'map' ? 'globe' : 'map'))}
+              className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              aria-label="Toggle map view"
+            >
+              {viewMode === 'map' ? 'Globe' : 'Map'}
+            </button>
+          </div>
+        )}
+
+        {isSceneReady && showNavigationControls && navState && viewMode === 'globe' && (() => {
+          const heading = ((navState.headingDegrees % 360) + 360) % 360;
+          return (
+            <div className="hidden sm:block absolute right-6 bottom-28 z-50">
+              <button
+                type="button"
+                onClick={() => {
+                  globeRef.current?.tiltToTopDown();
+                  globeRef.current?.resetHeading();
+                }}
+                className="hud-panel corner-accents w-12 h-12 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                aria-label="Reset heading and tilt"
+                title="Reset heading and tilt"
+              >
+                <span
+                  className="inline-flex"
+                  style={{ transform: `rotate(${-heading}deg)` }}
+                >
+                  <Compass className="w-5 h-5" />
+                </span>
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Footer status bar */}
         <motion.div
@@ -1034,7 +1158,9 @@ export default function Index() {
         {/* Camera Detail Modal */}
         <CameraDetailModal
           camera={selectedCamera}
+          allCameras={allCameras}
           onClose={handleCloseModal}
+          onSelectCamera={(cam) => handleCameraSelect(cam)}
           onToggleFavorite={toggleFavoriteSelected}
           isFavorite={isSelectedFavorite}
           onCopyShareLink={handleCopyShareLink}
