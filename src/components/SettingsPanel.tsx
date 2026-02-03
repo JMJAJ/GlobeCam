@@ -12,6 +12,8 @@ interface SettingsPanelProps {
   markerSize: number;
   cloudsEnabled: boolean;
   cloudsOpacity: number;
+  showCountryBorders: boolean;
+  showNavigationControls: boolean;
   onClose: () => void;
   onAutoRotateEnabledChange: (enabled: boolean) => void;
   onAutoRotateSpeedChange: (speed: number) => void;
@@ -19,6 +21,8 @@ interface SettingsPanelProps {
   onMarkerSizeChange: (size: number) => void;
   onCloudsEnabledChange: (enabled: boolean) => void;
   onCloudsOpacityChange: (opacity: number) => void;
+  onShowCountryBordersChange: (show: boolean) => void;
+  onShowNavigationControlsChange: (show: boolean) => void;
 }
 
 export function SettingsPanel({
@@ -29,6 +33,8 @@ export function SettingsPanel({
   markerSize,
   cloudsEnabled,
   cloudsOpacity,
+  showCountryBorders,
+  showNavigationControls,
   onClose,
   onAutoRotateEnabledChange,
   onAutoRotateSpeedChange,
@@ -36,6 +42,8 @@ export function SettingsPanel({
   onMarkerSizeChange,
   onCloudsEnabledChange,
   onCloudsOpacityChange,
+  onShowCountryBordersChange,
+  onShowNavigationControlsChange,
 }: SettingsPanelProps) {
   const speedLabel = `${autoRotateSpeed.toFixed(2)}°/s`;
   const markerSizeLabel = `${markerSize.toFixed(2)}x`;
@@ -114,7 +122,7 @@ export function SettingsPanel({
                     />
                   </div>
 
-                  <div className={cn("flex items-start justify-between gap-4")}>
+                  <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                         OSM tiles
@@ -126,6 +134,36 @@ export function SettingsPanel({
                     <Switch
                       checked={showOsmTiles}
                       onCheckedChange={onShowOsmTilesChange}
+                    />
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                        Country borders
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Show country borders overlay on the globe.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={showCountryBorders}
+                      onCheckedChange={onShowCountryBordersChange}
+                    />
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                        Heading & tilt controls
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Show compass and tilt controls.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={showNavigationControls}
+                      onCheckedChange={onShowNavigationControlsChange}
                     />
                   </div>
 

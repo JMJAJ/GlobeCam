@@ -20,6 +20,10 @@ export default defineConfig(({ mode }) => ({
     viteStaticCopy({
       targets: [
         {
+          src: "src/data/camera_data.min.v2.json",
+          dest: "",
+        },
+        {
           src: "node_modules/cesium/Build/Cesium/Workers/*",
           dest: "cesium/Workers",
         },

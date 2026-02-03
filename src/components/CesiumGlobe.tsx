@@ -6,6 +6,7 @@ import {
   Cesium3DTileset,
   Color,
   Ellipsoid,
+  GeoJsonDataSource,
   Ion,
   Math as CesiumMath,
   PointPrimitiveCollection,
@@ -29,6 +30,8 @@ interface CesiumGlobeProps {
   markerSize?: number;
   cloudsEnabled?: boolean;
   cloudsOpacity?: number;
+  showCountryBorders?: boolean;
+  showNavigationControls?: boolean;
   viewMode?: 'globe' | 'map';
   onReadyChange?: (ready: boolean) => void;
 }
@@ -42,19 +45,27 @@ export function CesiumGlobe({
   markerSize = 1,
   cloudsEnabled = true,
   cloudsOpacity = 0.55,
+  showCountryBorders = false,
+  showNavigationControls = false,
   viewMode = 'globe',
   onReadyChange,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const markerLayerRef = useRef<PointPrimitiveCollection | null>(null);
+  const bordersDataSourceRef = useRef<GeoJsonDataSource | null>(null);
   const clickHandlerRef = useRef<ScreenSpaceEventHandler | null>(null);
+  const onCameraSelectRef = useRef<CesiumGlobeProps['onCameraSelect']>(onCameraSelect);
   const markerIndexRef = useRef<Map<string, any>>(new Map());
   const selectedIdRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
   const scratchDiffRef = useRef(new Cartesian3());
   const scratchToPointRef = useRef(new Cartesian3());
   const scratchCamUnitRef = useRef(new Cartesian3());
+
+  useEffect(() => {
+    onCameraSelectRef.current = onCameraSelect;
+  }, [onCameraSelect]);
 
   const applyCulling = (v: Viewer, layer: PointPrimitiveCollection) => {
     const camPos = v.camera.positionWC;
@@ -257,6 +268,15 @@ export function CesiumGlobe({
       // ignore
     }
 
+    // Google-Maps-like "heading/tilt" controls: Cesium's navigation help button/compass widget.
+    // We keep the Viewer option disabled and instead toggle the widget container directly.
+    try {
+      const navContainer = (v as any).cesiumWidget?.navigationHelpButton?.container as HTMLElement | undefined;
+      if (navContainer) navContainer.style.display = showNavigationControls ? '' : 'none';
+    } catch {
+      // ignore
+    }
+
     // Reduce depth precision artifacts (z-fighting) when mixing globe + terrain + 3D tiles.
     v.scene.logarithmicDepthBuffer = true;
 
@@ -290,7 +310,7 @@ export function CesiumGlobe({
     handler.setInputAction((movement: any) => {
       const picked = v.scene.pick(movement.position as Cartesian2);
       const cam: CameraData | undefined = picked?.primitive?.id?.__camera;
-      if (cam) onCameraSelect?.(cam);
+      if (cam) onCameraSelectRef.current?.(cam);
     }, ScreenSpaceEventType.LEFT_CLICK);
 
     let destroyed = false;
@@ -398,10 +418,98 @@ export function CesiumGlobe({
         markerLayerRef.current.destroy();
         markerLayerRef.current = null;
       }
+      if (bordersDataSourceRef.current) {
+        try {
+          v.dataSources.remove(bordersDataSourceRef.current, true);
+        } catch {
+          // ignore
+        }
+        bordersDataSourceRef.current = null;
+      }
       v.destroy();
       viewerRef.current = null;
     };
-  }, [onCameraSelect]);
+  }, []);
+
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+
+    try {
+      const navContainer = (v as any).cesiumWidget?.navigationHelpButton?.container as HTMLElement | undefined;
+      if (navContainer) navContainer.style.display = showNavigationControls ? '' : 'none';
+    } catch {
+      // ignore
+    }
+  }, [showNavigationControls]);
+
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+
+    let cancelled = false;
+
+    const applyVisibility = () => {
+      const ds = bordersDataSourceRef.current;
+      if (!ds) return;
+      ds.show = showCountryBorders;
+      v.scene.requestRender();
+    };
+
+    if (!showCountryBorders) {
+      applyVisibility();
+      return;
+    }
+
+    if (bordersDataSourceRef.current) {
+      applyVisibility();
+      return;
+    }
+
+    (async () => {
+      try {
+        // Public-domain Natural Earth-derived country boundaries (GeoJSON).
+        // If you prefer an offline bundle later, we can move this into /public and reference it locally.
+        // NOTE: Some "countries" GeoJSON datasets include polygons that can trip Cesium's polygon outline
+        // generation (RangeError: Invalid array length). To avoid that, we load a *line-only* boundaries
+        // dataset and force entities to render as polylines.
+        const url = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_boundary_lines_land.geojson';
+        const ds = await GeoJsonDataSource.load(url, {
+          stroke: Color.WHITE.withAlpha(0.55),
+          fill: Color.TRANSPARENT,
+          strokeWidth: 1,
+        } as any);
+
+        // Extra safety: ensure we never attempt to render polygons (only polylines).
+        try {
+          const entities = ds.entities.values;
+          for (const e of entities) {
+            if ((e as any).polygon) (e as any).polygon = undefined;
+            if ((e as any).polyline) {
+              (e as any).polyline.width = 1;
+              (e as any).polyline.material = Color.WHITE.withAlpha(0.55) as any;
+              (e as any).polyline.clampToGround = true;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        if (cancelled || v.isDestroyed()) return;
+
+        bordersDataSourceRef.current = ds;
+        v.dataSources.add(ds);
+        ds.show = showCountryBorders;
+        v.scene.requestRender();
+      } catch (e) {
+        console.error('Failed to load country borders GeoJSON', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showCountryBorders]);
 
   useEffect(() => {
     const v = viewerRef.current;

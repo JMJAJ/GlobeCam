@@ -25,13 +25,30 @@ import {
   CornerDecorations,
   TechLines
 } from '@/components/VisualOverlays';
-import cameraDataRaw from '@/data/camera_data.json';
 import { CameraData } from '@/types/camera';
 import { Layers, Search, Sliders, X, Star } from 'lucide-react';
 
 const FAVORITES_STORAGE_KEY = 'globecam:favorites';
 const RECENTS_STORAGE_KEY = 'globecam:recents';
 const SETTINGS_STORAGE_KEY = 'globecam:settings';
+
+async function fetchCameraData(): Promise<any[]> {
+  const isDev = import.meta.env.DEV;
+  const res = await fetch('/camera_data.min.v2.json', {
+    cache: isDev ? 'no-store' : 'force-cache',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load camera data (${res.status})`);
+  }
+  const json = await res.json();
+  if (!Array.isArray(json)) {
+    throw new Error('Camera data JSON is not an array');
+  }
+  return json;
+}
 
 function readStringArrayStorage(key: string): string[] {
   try {
@@ -323,8 +340,28 @@ function getCameraStats(cameras: CameraData[]) {
 }
 
 export default function Index() {
+  const [cameraDataRaw, setCameraDataRaw] = useState<any[] | null>(null);
+  const [cameraDataError, setCameraDataError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    fetchCameraData()
+      .then((data) => {
+        if (abort.signal.aborted) return;
+        setCameraDataRaw(data);
+      })
+      .catch((err) => {
+        if (abort.signal.aborted) return;
+        setCameraDataError(err instanceof Error ? err.message : 'Failed to load camera data');
+      });
+    return () => {
+      abort.abort();
+    };
+  }, []);
+
   // Load and process cameras from JSON
   const allCameras = useMemo(() => {
+    if (!cameraDataRaw) return [] as CameraData[];
     return (cameraDataRaw as any[]).map((cam: any, index: number) => ({
       id: `cam-${String(index).padStart(5, '0')}`,
       latitude: cam.latitude,
@@ -337,7 +374,7 @@ export default function Index() {
       image_url: cam.image_url,
       page_url: cam.page_url
     })) as CameraData[];
-  }, []);
+  }, [cameraDataRaw]);
 
   const initialQueryParams = useMemo(() => {
     if (typeof window === 'undefined') return null;
@@ -400,6 +437,8 @@ export default function Index() {
     const raw = persistedSettings?.cloudsOpacity;
     return typeof raw === 'number' ? Math.max(0, Math.min(1, raw)) : 0.55;
   });
+  const [showCountryBorders, setShowCountryBorders] = useState(() => persistedSettings?.showCountryBorders ?? false);
+  const [showNavigationControls, setShowNavigationControls] = useState(() => persistedSettings?.showNavigationControls ?? false);
   const [viewMode, setViewMode] = useState<'globe' | 'map'>(() => persistedSettings?.viewMode ?? 'globe');
   const [isSceneReady, setIsSceneReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -660,6 +699,8 @@ export default function Index() {
       glowIntensity,
       cloudsEnabled,
       cloudsOpacity,
+      showCountryBorders,
+      showNavigationControls,
       viewMode,
     });
   }, [
@@ -673,8 +714,33 @@ export default function Index() {
     glowIntensity,
     cloudsEnabled,
     cloudsOpacity,
+    showCountryBorders,
+    showNavigationControls,
     viewMode,
   ]);
+
+  if (cameraDataError) {
+    return (
+      <ParallaxProvider>
+        <div className="relative w-screen h-screen bg-background overflow-hidden">
+          <GridOverlay />
+          <TechLines />
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
+            <div className="hud-panel corner-accents max-w-[520px]">
+              <div className="border-b border-panel-border px-4 py-3">
+                <div className="font-mono text-xs uppercase tracking-widest text-white/80">
+                  Data Load Error
+                </div>
+              </div>
+              <div className="p-4">
+                <div className="font-mono text-xs text-white/70 break-words">{cameraDataError}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ParallaxProvider>
+    );
+  }
 
   return (
     <ParallaxProvider>
@@ -733,6 +799,8 @@ export default function Index() {
               markerSize={markerSize}
               cloudsEnabled={cloudsEnabled}
               cloudsOpacity={cloudsOpacity}
+              showCountryBorders={showCountryBorders}
+              showNavigationControls={showNavigationControls}
               viewMode={viewMode}
               onReadyChange={setIsSceneReady}
             />
@@ -900,6 +968,8 @@ export default function Index() {
           markerSize={markerSize}
           cloudsEnabled={cloudsEnabled}
           cloudsOpacity={cloudsOpacity}
+          showCountryBorders={showCountryBorders}
+          showNavigationControls={showNavigationControls}
           onClose={handleSettingsClose}
           onAutoRotateEnabledChange={setAutoRotateEnabled}
           onAutoRotateSpeedChange={setAutoRotateSpeed}
@@ -907,6 +977,8 @@ export default function Index() {
           onMarkerSizeChange={setMarkerSize}
           onCloudsEnabledChange={setCloudsEnabled}
           onCloudsOpacityChange={setCloudsOpacity}
+          onShowCountryBordersChange={setShowCountryBorders}
+          onShowNavigationControlsChange={setShowNavigationControls}
         />
 
         {/* Overlays */}
