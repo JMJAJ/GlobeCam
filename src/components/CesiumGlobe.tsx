@@ -336,6 +336,40 @@ export const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(function
     v.scene.screenSpaceCameraController.enableTilt = true;
     v.scene.globe.depthTestAgainstTerrain = false;
 
+    // ========== CAMERA CONTROLLER TUNING FOR FASTER/SMOOTHER MOVEMENT ==========
+    const controller = v.scene.screenSpaceCameraController;
+
+    // Allow zooming very close and far
+    controller.minimumZoomDistance = 100; // Allow zooming very close (100m)
+    controller.maximumZoomDistance = 50000000; // Max zoom out distance
+
+    // Reduce inertia for snappier controls (0 = no inertia, 1 = max inertia)
+    // Lower values = less "drift" after releasing mouse, feels more immediate
+    controller.inertiaSpin = 0.25; // Rotation inertia (default ~0.9)
+    controller.inertiaTranslate = 0.25; // Pan inertia (default ~0.9)  
+    controller.inertiaZoom = 0.4; // Zoom inertia (default ~0.8)
+
+    // Increase the speed at which the camera moves based on altitude
+    controller.minimumCollisionTerrainHeight = 10000; // When to start collision detection
+
+    // Make zooming and movement feel more immediate
+    try {
+      // Access internal properties to boost speeds (may vary by Cesium version)
+      (controller as any)._zoomFactor = 10.0; // Default is ~5.0, higher = faster scroll zoom
+      (controller as any)._maximumRotateRate = 4.0; // Faster rotation
+      (controller as any)._rotateRateRangeAdjustment = 1.2; // Scale factor
+    } catch {
+      // Some properties may not exist in all Cesium versions
+    }
+
+    // Boost camera movement speed by adjusting constraints
+    try {
+      // Make wheel zoom more aggressive
+      controller.maximumMovementRatio = 0.3; // Lower = faster (default ~0.5)
+    } catch {
+      // ignore if property doesn't exist
+    }
+
     // Show Cesium's built-in compass/tilt widget.
     // (Cesium adds it when navigationHelpButton is enabled + widgets CSS is loaded.)
     try {

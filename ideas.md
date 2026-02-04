@@ -65,10 +65,6 @@ Legend:
   - Notes:
     - No timestamp/uptime tracking present.
 
-- [ ] **Show source + license/attribution per cam**
-  - Notes:
-    - `source` is shown, but no attribution/license mapping is implemented.
-
 ---
 
 ## Map / globe interactions
@@ -80,9 +76,9 @@ Legend:
     - `src/utils/clustering.ts`
     - `src/components/GlobeVisualization.tsx`
 
-- [ ] **“Near me” button (use geolocation) + distance sorting**
-  - Notes:
-    - No `navigator.geolocation` usage found.
+- [x] **“Near me” button (use geolocation) + distance sorting**
+  - Implemented:
+    - `navigator.geolocation` usage found.
 
 - [ ] **Quick sort (closest, newest, most popular)**
   - Notes:

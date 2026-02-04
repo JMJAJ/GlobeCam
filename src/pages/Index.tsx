@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ParallaxProvider } from '@/components/ParallaxProvider';
 import { CesiumGlobe, type CesiumGlobeRef } from '@/components/CesiumGlobe';
 import { Header } from '@/components/Header';
@@ -11,6 +11,7 @@ import { CommandSearch } from '@/components/CommandSearch';
 import { CameraDetailModal } from '@/components/CameraDetailModal';
 import { toast } from '@/components/ui/sonner';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { OSINTBoard } from '@/components/OSINTBoard';
 import { Cartesian2, Math as CesiumMath } from 'cesium';
 import {
   Drawer,
@@ -216,224 +217,486 @@ function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: num
   return R * c;
 }
 
-// Helper function to determine continent from country
+// Helper function to determine continent from country - EXPANDED for maximum coverage
 function getContinent(country: string): string {
+  if (!country) return 'Other';
+
+  // Normalize the country name for matching
+  const normalized = country.trim().toLowerCase();
+
   const continentMap: Record<string, string> = {
-    // North America
-    'United States': 'North America',
-    'Canada': 'North America',
-    'Mexico': 'North America',
-    'Guatemala': 'North America',
-    'Honduras': 'North America',
-    'El Salvador': 'North America',
-    'Nicaragua': 'North America',
-    'Costa Rica': 'North America',
-    'Panama': 'North America',
-    'Belize': 'North America',
-    'Cuba': 'North America',
-    'Jamaica': 'North America',
-    'Haiti': 'North America',
-    'Dominican Republic': 'North America',
-    'Bahamas': 'North America',
-    'Trinidad and Tobago': 'North America',
-    'Barbados': 'North America',
-    'Grenada': 'North America',
-    'Saint Lucia': 'North America',
-    'Saint Vincent and the Grenadines': 'North America',
-    'Antigua and Barbuda': 'North America',
-    'Dominica': 'North America',
-    'Saint Kitts and Nevis': 'North America',
+    // ==================== NORTH AMERICA ====================
+    'united states': 'North America',
+    'united states of america': 'North America',
+    'usa': 'North America',
+    'us': 'North America',
+    'u.s.': 'North America',
+    'u.s.a.': 'North America',
+    'america': 'North America',
+    'canada': 'North America',
+    'mexico': 'North America',
+    'méxico': 'North America',
+    'guatemala': 'North America',
+    'honduras': 'North America',
+    'el salvador': 'North America',
+    'nicaragua': 'North America',
+    'costa rica': 'North America',
+    'panama': 'North America',
+    'panamá': 'North America',
+    'belize': 'North America',
+    'cuba': 'North America',
+    'jamaica': 'North America',
+    'haiti': 'North America',
+    'haïti': 'North America',
+    'dominican republic': 'North America',
+    'república dominicana': 'North America',
+    'bahamas': 'North America',
+    'the bahamas': 'North America',
+    'trinidad and tobago': 'North America',
+    'barbados': 'North America',
+    'grenada': 'North America',
+    'saint lucia': 'North America',
+    'st. lucia': 'North America',
+    'st lucia': 'North America',
+    'saint vincent and the grenadines': 'North America',
+    'st. vincent': 'North America',
+    'antigua and barbuda': 'North America',
+    'dominica': 'North America',
+    'saint kitts and nevis': 'North America',
+    'st. kitts and nevis': 'North America',
+    'puerto rico': 'North America',
+    'virgin islands': 'North America',
+    'u.s. virgin islands': 'North America',
+    'british virgin islands': 'North America',
+    'cayman islands': 'North America',
+    'bermuda': 'North America',
+    'turks and caicos': 'North America',
+    'turks and caicos islands': 'North America',
+    'aruba': 'North America',
+    'curaçao': 'North America',
+    'curacao': 'North America',
+    'sint maarten': 'North America',
+    'saint martin': 'North America',
+    'st. martin': 'North America',
+    'martinique': 'North America',
+    'guadeloupe': 'North America',
+    'greenland': 'North America',
+    'anguilla': 'North America',
+    'montserrat': 'North America',
+    'saint barthélemy': 'North America',
+    'st. barts': 'North America',
+    'bonaire': 'North America',
+    'saba': 'North America',
+    'sint eustatius': 'North America',
 
-    // South America
-    'Brazil': 'South America',
-    'Argentina': 'South America',
-    'Chile': 'South America',
-    'Colombia': 'South America',
-    'Peru': 'South America',
-    'Venezuela': 'South America',
-    'Ecuador': 'South America',
-    'Bolivia': 'South America',
-    'Paraguay': 'South America',
-    'Uruguay': 'South America',
-    'Guyana': 'South America',
-    'Suriname': 'South America',
-    'French Guiana': 'South America',
+    // ==================== SOUTH AMERICA ====================
+    'brazil': 'South America',
+    'brasil': 'South America',
+    'argentina': 'South America',
+    'chile': 'South America',
+    'colombia': 'South America',
+    'peru': 'South America',
+    'perú': 'South America',
+    'venezuela': 'South America',
+    'ecuador': 'South America',
+    'bolivia': 'South America',
+    'paraguay': 'South America',
+    'uruguay': 'South America',
+    'guyana': 'South America',
+    'suriname': 'South America',
+    'french guiana': 'South America',
+    'guyane': 'South America',
+    'falkland islands': 'South America',
+    'islas malvinas': 'South America',
 
-    // Europe
-    'United Kingdom': 'Europe',
-    'Germany': 'Europe',
-    'France': 'Europe',
-    'Italy': 'Europe',
-    'Spain': 'Europe',
-    'Netherlands': 'Europe',
-    'Belgium': 'Europe',
-    'Switzerland': 'Europe',
-    'Austria': 'Europe',
-    'Poland': 'Europe',
-    'Romania': 'Europe',
-    'Czech Republic': 'Europe',
-    'Hungary': 'Europe',
-    'Sweden': 'Europe',
-    'Norway': 'Europe',
-    'Denmark': 'Europe',
-    'Finland': 'Europe',
-    'Russia': 'Europe',
-    'Ukraine': 'Europe',
-    'Portugal': 'Europe',
-    'Greece': 'Europe',
-    'Ireland': 'Europe',
-    'Iceland': 'Europe',
-    'Croatia': 'Europe',
-    'Serbia': 'Europe',
-    'Bulgaria': 'Europe',
-    'Slovakia': 'Europe',
-    'Slovenia': 'Europe',
-    'Lithuania': 'Europe',
-    'Latvia': 'Europe',
-    'Estonia': 'Europe',
-    'Bosnia and Herzegovina': 'Europe',
-    'Albania': 'Europe',
-    'North Macedonia': 'Europe',
-    'Montenegro': 'Europe',
-    'Luxembourg': 'Europe',
-    'Malta': 'Europe',
-    'Cyprus': 'Europe',
-    'Belarus': 'Europe',
-    'Moldova': 'Europe',
-    'Monaco': 'Europe',
-    'Liechtenstein': 'Europe',
-    'San Marino': 'Europe',
-    'Vatican City': 'Europe',
-    'Andorra': 'Europe',
-    'Kosovo': 'Europe',
+    // ==================== EUROPE ====================
+    'united kingdom': 'Europe',
+    'uk': 'Europe',
+    'u.k.': 'Europe',
+    'great britain': 'Europe',
+    'britain': 'Europe',
+    'england': 'Europe',
+    'scotland': 'Europe',
+    'wales': 'Europe',
+    'northern ireland': 'Europe',
+    'germany': 'Europe',
+    'deutschland': 'Europe',
+    'france': 'Europe',
+    'italy': 'Europe',
+    'italia': 'Europe',
+    'spain': 'Europe',
+    'españa': 'Europe',
+    'netherlands': 'Europe',
+    'the netherlands': 'Europe',
+    'holland': 'Europe',
+    'belgium': 'Europe',
+    'belgique': 'Europe',
+    'belgië': 'Europe',
+    'switzerland': 'Europe',
+    'schweiz': 'Europe',
+    'suisse': 'Europe',
+    'svizzera': 'Europe',
+    'austria': 'Europe',
+    'österreich': 'Europe',
+    'poland': 'Europe',
+    'polska': 'Europe',
+    'romania': 'Europe',
+    'românia': 'Europe',
+    'czech republic': 'Europe',
+    'czechia': 'Europe',
+    'česko': 'Europe',
+    'hungary': 'Europe',
+    'magyarország': 'Europe',
+    'sweden': 'Europe',
+    'sverige': 'Europe',
+    'norway': 'Europe',
+    'norge': 'Europe',
+    'denmark': 'Europe',
+    'danmark': 'Europe',
+    'finland': 'Europe',
+    'suomi': 'Europe',
+    'russia': 'Europe',
+    'russian federation': 'Europe',
+    'россия': 'Europe',
+    'ukraine': 'Europe',
+    'україна': 'Europe',
+    'portugal': 'Europe',
+    'greece': 'Europe',
+    'ελλάδα': 'Europe',
+    'hellas': 'Europe',
+    'ireland': 'Europe',
+    'éire': 'Europe',
+    'republic of ireland': 'Europe',
+    'iceland': 'Europe',
+    'ísland': 'Europe',
+    'croatia': 'Europe',
+    'hrvatska': 'Europe',
+    'serbia': 'Europe',
+    'србија': 'Europe',
+    'bulgaria': 'Europe',
+    'българия': 'Europe',
+    'slovakia': 'Europe',
+    'slovensko': 'Europe',
+    'slovenia': 'Europe',
+    'slovenija': 'Europe',
+    'lithuania': 'Europe',
+    'lietuva': 'Europe',
+    'latvia': 'Europe',
+    'latvija': 'Europe',
+    'estonia': 'Europe',
+    'eesti': 'Europe',
+    'bosnia and herzegovina': 'Europe',
+    'bosnia': 'Europe',
+    'bosna i hercegovina': 'Europe',
+    'albania': 'Europe',
+    'shqipëri': 'Europe',
+    'north macedonia': 'Europe',
+    'macedonia': 'Europe',
+    'северна македонија': 'Europe',
+    'montenegro': 'Europe',
+    'crna gora': 'Europe',
+    'luxembourg': 'Europe',
+    'lëtzebuerg': 'Europe',
+    'malta': 'Europe',
+    'cyprus': 'Europe',
+    'κύπρος': 'Europe',
+    'kypros': 'Europe',
+    'belarus': 'Europe',
+    'беларусь': 'Europe',
+    'moldova': 'Europe',
+    'monaco': 'Europe',
+    'liechtenstein': 'Europe',
+    'san marino': 'Europe',
+    'vatican city': 'Europe',
+    'vatican': 'Europe',
+    'holy see': 'Europe',
+    'andorra': 'Europe',
+    'kosovo': 'Europe',
+    'косово': 'Europe',
+    'faroe islands': 'Europe',
+    'føroyar': 'Europe',
+    'gibraltar': 'Europe',
+    'isle of man': 'Europe',
+    'jersey': 'Europe',
+    'guernsey': 'Europe',
+    'åland islands': 'Europe',
+    'aland': 'Europe',
+    'svalbard': 'Europe',
 
-    // Asia
-    'China': 'Asia',
-    'Japan': 'Asia',
-    'India': 'Asia',
-    'South Korea': 'Asia',
-    'Indonesia': 'Asia',
-    'Thailand': 'Asia',
-    'Vietnam': 'Asia',
-    'Malaysia': 'Asia',
-    'Singapore': 'Asia',
-    'Philippines': 'Asia',
-    'Taiwan': 'Asia',
-    'Pakistan': 'Asia',
-    'Bangladesh': 'Asia',
-    'Myanmar': 'Asia',
-    'Cambodia': 'Asia',
-    'Laos': 'Asia',
-    'Nepal': 'Asia',
-    'Sri Lanka': 'Asia',
-    'Afghanistan': 'Asia',
-    'Kazakhstan': 'Asia',
-    'Uzbekistan': 'Asia',
-    'Turkmenistan': 'Asia',
-    'Kyrgyzstan': 'Asia',
-    'Tajikistan': 'Asia',
-    'Mongolia': 'Asia',
-    'North Korea': 'Asia',
-    'Brunei': 'Asia',
-    'Bhutan': 'Asia',
-    'Maldives': 'Asia',
-    'Timor-Leste': 'Asia',
-    'Hong Kong': 'Asia',
-    'Macau': 'Asia',
+    // ==================== ASIA ====================
+    'china': 'Asia',
+    'peoples republic of china': 'Asia',
+    "people's republic of china": 'Asia',
+    '中国': 'Asia',
+    'zhongguo': 'Asia',
+    'japan': 'Asia',
+    '日本': 'Asia',
+    'nippon': 'Asia',
+    'nihon': 'Asia',
+    'india': 'Asia',
+    'भारत': 'Asia',
+    'bharat': 'Asia',
+    'south korea': 'Asia',
+    'korea': 'Asia',
+    'republic of korea': 'Asia',
+    '대한민국': 'Asia',
+    '한국': 'Asia',
+    'indonesia': 'Asia',
+    'thailand': 'Asia',
+    'ประเทศไทย': 'Asia',
+    'vietnam': 'Asia',
+    'viet nam': 'Asia',
+    'việt nam': 'Asia',
+    'malaysia': 'Asia',
+    'singapore': 'Asia',
+    'philippines': 'Asia',
+    'pilipinas': 'Asia',
+    'taiwan': 'Asia',
+    '台灣': 'Asia',
+    'republic of china': 'Asia',
+    'pakistan': 'Asia',
+    'پاکستان': 'Asia',
+    'bangladesh': 'Asia',
+    'বাংলাদেশ': 'Asia',
+    'myanmar': 'Asia',
+    'burma': 'Asia',
+    'cambodia': 'Asia',
+    'kampuchea': 'Asia',
+    'laos': 'Asia',
+    "lao people's democratic republic": 'Asia',
+    'nepal': 'Asia',
+    'sri lanka': 'Asia',
+    'ceylon': 'Asia',
+    'afghanistan': 'Asia',
+    'kazakhstan': 'Asia',
+    'қазақстан': 'Asia',
+    'uzbekistan': 'Asia',
+    'oʻzbekiston': 'Asia',
+    'turkmenistan': 'Asia',
+    'kyrgyzstan': 'Asia',
+    'кыргызстан': 'Asia',
+    'tajikistan': 'Asia',
+    'тоҷикистон': 'Asia',
+    'mongolia': 'Asia',
+    'монгол улс': 'Asia',
+    'north korea': 'Asia',
+    "democratic people's republic of korea": 'Asia',
+    'dprk': 'Asia',
+    'brunei': 'Asia',
+    'brunei darussalam': 'Asia',
+    'bhutan': 'Asia',
+    'maldives': 'Asia',
+    'timor-leste': 'Asia',
+    'east timor': 'Asia',
+    'hong kong': 'Asia',
+    '香港': 'Asia',
+    'macau': 'Asia',
+    'macao': 'Asia',
+    '澳門': 'Asia',
 
-    // Middle East
-    'Saudi Arabia': 'Asia',
-    'United Arab Emirates': 'Asia',
-    'Israel': 'Asia',
-    'Jordan': 'Asia',
-    'Lebanon': 'Asia',
-    'Syria': 'Asia',
-    'Iraq': 'Asia',
-    'Iran': 'Asia',
-    'Turkey': 'Asia',
-    'Yemen': 'Asia',
-    'Oman': 'Asia',
-    'Kuwait': 'Asia',
-    'Qatar': 'Asia',
-    'Bahrain': 'Asia',
-    'Palestine': 'Asia',
-    'Armenia': 'Asia',
-    'Azerbaijan': 'Asia',
-    'Georgia': 'Asia',
+    // Middle East (part of Asia)
+    'saudi arabia': 'Asia',
+    'kingdom of saudi arabia': 'Asia',
+    'ksa': 'Asia',
+    'united arab emirates': 'Asia',
+    'uae': 'Asia',
+    'u.a.e.': 'Asia',
+    'emirates': 'Asia',
+    'dubai': 'Asia',
+    'abu dhabi': 'Asia',
+    'israel': 'Asia',
+    'ישראל': 'Asia',
+    'jordan': 'Asia',
+    'الأردن': 'Asia',
+    'lebanon': 'Asia',
+    'لبنان': 'Asia',
+    'syria': 'Asia',
+    'syrian arab republic': 'Asia',
+    'سوريا': 'Asia',
+    'iraq': 'Asia',
+    'العراق': 'Asia',
+    'iran': 'Asia',
+    'islamic republic of iran': 'Asia',
+    'persia': 'Asia',
+    'ایران': 'Asia',
+    'turkey': 'Asia',
+    'türkiye': 'Asia',
+    'turkiye': 'Asia',
+    'yemen': 'Asia',
+    'اليمن': 'Asia',
+    'oman': 'Asia',
+    'عمان': 'Asia',
+    'kuwait': 'Asia',
+    'الكويت': 'Asia',
+    'qatar': 'Asia',
+    'قطر': 'Asia',
+    'bahrain': 'Asia',
+    'البحرين': 'Asia',
+    'palestine': 'Asia',
+    'palestinian territories': 'Asia',
+    'state of palestine': 'Asia',
+    'فلسطين': 'Asia',
+    'gaza': 'Asia',
+    'west bank': 'Asia',
+    'armenia': 'Asia',
+    'հայdelays': 'Asia',
+    'hayastan': 'Asia',
+    'azerbaijan': 'Asia',
+    'azərbaycan': 'Asia',
+    'georgia': 'Asia',
+    'საქართველო': 'Asia',
+    'sakartvelo': 'Asia',
 
-    // Africa
-    'South Africa': 'Africa',
-    'Egypt': 'Africa',
-    'Nigeria': 'Africa',
-    'Kenya': 'Africa',
-    'Ethiopia': 'Africa',
-    'Ghana': 'Africa',
-    'Tanzania': 'Africa',
-    'Uganda': 'Africa',
-    'Algeria': 'Africa',
-    'Morocco': 'Africa',
-    'Angola': 'Africa',
-    'Mozambique': 'Africa',
-    'Madagascar': 'Africa',
-    'Cameroon': 'Africa',
-    'Ivory Coast': 'Africa',
-    'Niger': 'Africa',
-    'Burkina Faso': 'Africa',
-    'Mali': 'Africa',
-    'Malawi': 'Africa',
-    'Zambia': 'Africa',
-    'Somalia': 'Africa',
-    'Senegal': 'Africa',
-    'Chad': 'Africa',
-    'Zimbabwe': 'Africa',
-    'Guinea': 'Africa',
-    'Rwanda': 'Africa',
-    'Benin': 'Africa',
-    'Tunisia': 'Africa',
-    'Burundi': 'Africa',
-    'South Sudan': 'Africa',
-    'Togo': 'Africa',
-    'Sierra Leone': 'Africa',
-    'Libya': 'Africa',
-    'Liberia': 'Africa',
-    'Mauritania': 'Africa',
-    'Eritrea': 'Africa',
-    'Gambia': 'Africa',
-    'Botswana': 'Africa',
-    'Namibia': 'Africa',
-    'Gabon': 'Africa',
-    'Lesotho': 'Africa',
-    'Guinea-Bissau': 'Africa',
-    'Equatorial Guinea': 'Africa',
-    'Mauritius': 'Africa',
-    'Eswatini': 'Africa',
-    'Djibouti': 'Africa',
-    'Comoros': 'Africa',
-    'Cape Verde': 'Africa',
-    'Sao Tome and Principe': 'Africa',
-    'Seychelles': 'Africa',
-    'Sudan': 'Africa',
-    'Congo': 'Africa',
-    'Democratic Republic of the Congo': 'Africa',
-    'Central African Republic': 'Africa',
+    // ==================== AFRICA ====================
+    'south africa': 'Africa',
+    'rsa': 'Africa',
+    'egypt': 'Africa',
+    'مصر': 'Africa',
+    'misr': 'Africa',
+    'nigeria': 'Africa',
+    'kenya': 'Africa',
+    'ethiopia': 'Africa',
+    'ኢትዮጵያ': 'Africa',
+    'ghana': 'Africa',
+    'tanzania': 'Africa',
+    'uganda': 'Africa',
+    'algeria': 'Africa',
+    'الجزائر': 'Africa',
+    'morocco': 'Africa',
+    'المغرب': 'Africa',
+    'maroc': 'Africa',
+    'angola': 'Africa',
+    'mozambique': 'Africa',
+    'moçambique': 'Africa',
+    'madagascar': 'Africa',
+    'cameroon': 'Africa',
+    'cameroun': 'Africa',
+    'ivory coast': 'Africa',
+    "côte d'ivoire": 'Africa',
+    'cote divoire': 'Africa',
+    'niger': 'Africa',
+    'burkina faso': 'Africa',
+    'mali': 'Africa',
+    'malawi': 'Africa',
+    'zambia': 'Africa',
+    'somalia': 'Africa',
+    'الصومال': 'Africa',
+    'senegal': 'Africa',
+    'sénégal': 'Africa',
+    'chad': 'Africa',
+    'tchad': 'Africa',
+    'تشاد': 'Africa',
+    'zimbabwe': 'Africa',
+    'guinea': 'Africa',
+    'guinée': 'Africa',
+    'rwanda': 'Africa',
+    'benin': 'Africa',
+    'bénin': 'Africa',
+    'tunisia': 'Africa',
+    'tunisie': 'Africa',
+    'تونس': 'Africa',
+    'burundi': 'Africa',
+    'south sudan': 'Africa',
+    'togo': 'Africa',
+    'sierra leone': 'Africa',
+    'libya': 'Africa',
+    'ليبيا': 'Africa',
+    'liberia': 'Africa',
+    'mauritania': 'Africa',
+    'موريتانيا': 'Africa',
+    'eritrea': 'Africa',
+    'gambia': 'Africa',
+    'the gambia': 'Africa',
+    'botswana': 'Africa',
+    'namibia': 'Africa',
+    'gabon': 'Africa',
+    'lesotho': 'Africa',
+    'guinea-bissau': 'Africa',
+    'guiné-bissau': 'Africa',
+    'equatorial guinea': 'Africa',
+    'guinea ecuatorial': 'Africa',
+    'mauritius': 'Africa',
+    'eswatini': 'Africa',
+    'swaziland': 'Africa',
+    'djibouti': 'Africa',
+    'comoros': 'Africa',
+    'comores': 'Africa',
+    'cape verde': 'Africa',
+    'cabo verde': 'Africa',
+    'sao tome and principe': 'Africa',
+    'são tomé and príncipe': 'Africa',
+    'seychelles': 'Africa',
+    'sudan': 'Africa',
+    'السودان': 'Africa',
+    'congo': 'Africa',
+    'republic of the congo': 'Africa',
+    'congo-brazzaville': 'Africa',
+    'democratic republic of the congo': 'Africa',
+    'drc': 'Africa',
+    'dr congo': 'Africa',
+    'congo-kinshasa': 'Africa',
+    'zaire': 'Africa',
+    'central african republic': 'Africa',
+    'république centrafricaine': 'Africa',
+    'car': 'Africa',
+    'reunion': 'Africa',
+    'réunion': 'Africa',
+    'mayotte': 'Africa',
+    'western sahara': 'Africa',
+    'somaliland': 'Africa',
 
-    // Oceania
-    'Australia': 'Oceania',
-    'New Zealand': 'Oceania',
-    'Papua New Guinea': 'Oceania',
-    'Fiji': 'Oceania',
-    'Solomon Islands': 'Oceania',
-    'Vanuatu': 'Oceania',
-    'Samoa': 'Oceania',
-    'Kiribati': 'Oceania',
-    'Micronesia': 'Oceania',
-    'Tonga': 'Oceania',
-    'Palau': 'Oceania',
-    'Marshall Islands': 'Oceania',
-    'Nauru': 'Oceania',
-    'Tuvalu': 'Oceania',
+    // ==================== OCEANIA ====================
+    'australia': 'Oceania',
+    'new zealand': 'Oceania',
+    'aotearoa': 'Oceania',
+    'papua new guinea': 'Oceania',
+    'png': 'Oceania',
+    'fiji': 'Oceania',
+    'solomon islands': 'Oceania',
+    'vanuatu': 'Oceania',
+    'samoa': 'Oceania',
+    'western samoa': 'Oceania',
+    'american samoa': 'Oceania',
+    'kiribati': 'Oceania',
+    'micronesia': 'Oceania',
+    'federated states of micronesia': 'Oceania',
+    'fsm': 'Oceania',
+    'tonga': 'Oceania',
+    'palau': 'Oceania',
+    'marshall islands': 'Oceania',
+    'nauru': 'Oceania',
+    'tuvalu': 'Oceania',
+    'new caledonia': 'Oceania',
+    'nouvelle-calédonie': 'Oceania',
+    'french polynesia': 'Oceania',
+    'polynésie française': 'Oceania',
+    'tahiti': 'Oceania',
+    'guam': 'Oceania',
+    'northern mariana islands': 'Oceania',
+    'cook islands': 'Oceania',
+    'niue': 'Oceania',
+    'tokelau': 'Oceania',
+    'wallis and futuna': 'Oceania',
+    'norfolk island': 'Oceania',
+    'christmas island': 'Oceania',
+    'cocos islands': 'Oceania',
+    'cocos (keeling) islands': 'Oceania',
+    'pitcairn islands': 'Oceania',
   };
-  return continentMap[country] || 'Other';
+
+  // Try exact match first (case-insensitive)
+  if (continentMap[normalized]) {
+    return continentMap[normalized];
+  }
+
+  // Try matching by checking if the normalized country starts with or contains known keys
+  for (const [key, continent] of Object.entries(continentMap)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return continent;
+    }
+  }
+
+  return 'Other';
 }
 
 // Get camera statistics
@@ -711,6 +974,7 @@ export default function Index() {
   const [viewMode, setViewMode] = useState<'globe' | 'map'>(() => persistedSettings?.viewMode ?? 'globe');
   const [isSceneReady, setIsSceneReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [isOSINTMode, setIsOSINTMode] = useState(false);
 
   const [sortMode, setSortMode] = useState<'none' | 'closest_me' | 'closest_view' | 'recent'>(
     initialSortMode as any
@@ -1109,6 +1373,10 @@ export default function Index() {
     setIsSettingsOpen(false);
   }, []);
 
+  const handleOSINTToggle = useCallback(() => {
+    setIsOSINTMode((prev) => !prev);
+  }, []);
+
   const handleSearchRegion = useCallback((region: string) => {
     setSearchQuery(region);
     syncUrl({
@@ -1241,36 +1509,76 @@ export default function Index() {
 
         {/* Header */}
         <Header
+          onLogoClick={handleOSINTToggle}
+          isOSINTMode={isOSINTMode}
           rightSlot={
-            <div className="absolute right-6 top-6 flex flex-col items-end gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSearchOpen}
-                  className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+            <AnimatePresence mode="wait">
+              {!isOSINTMode && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute right-6 top-6 flex flex-col items-end gap-3"
                 >
-                  <Search className="w-4 h-4" />
-                  Browse
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSettingsOpen}
-                  className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                >
-                  <Sliders className="w-4 h-4" />
-                  Settings
-                </button>
-              </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSearchOpen}
+                      className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    >
+                      <Search className="w-4 h-4" />
+                      Browse
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSettingsOpen}
+                      className="hud-panel corner-accents flex items-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                    >
+                      <Sliders className="w-4 h-4" />
+                      Settings
+                    </button>
+                  </div>
 
-              <div className="hidden md:block w-[320px]">
-                <LiveActivityIndicator online={stats.online} total={stats.total} />
-              </div>
-            </div>
+                  <div className="hidden md:block w-[320px]">
+                    <LiveActivityIndicator online={stats.online} total={stats.total} />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           }
         />
 
-        {/* Main globe container */}
-        <div className="absolute inset-0 flex items-center justify-center">
+        {/* OSINT Board - appears when active */}
+        <OSINTBoard
+          isOpen={isOSINTMode}
+          cameras={allCameras}
+          stats={stats}
+          onClose={() => setIsOSINTMode(false)}
+        />
+
+        {/* Main globe container - full screen normally, 16:9 mini-map in OSINT mode */}
+        <motion.div
+          className="absolute flex items-center justify-center"
+          initial={false}
+          animate={{
+            top: isOSINTMode ? '72.5px' : '0px',
+            right: isOSINTMode ? '17.5px' : '0px',
+            bottom: isOSINTMode ? 'auto' : '0px',
+            left: isOSINTMode ? 'auto' : '0px',
+            width: isOSINTMode ? '420px' : 'auto',
+            height: isOSINTMode ? '236px' : 'auto', // 16:9 aspect ratio
+            borderRadius: isOSINTMode ? '12px' : '0px',
+            zIndex: isOSINTMode ? 50 : 10,
+          }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            overflow: 'hidden',
+            boxShadow: isOSINTMode
+              ? '0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.15), inset 0 1px 0 rgba(255,255,255,0.08)'
+              : 'none',
+          }}
+        >
           <motion.div
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1283,17 +1591,63 @@ export default function Index() {
               onCameraSelect={handleCameraSelect}
               selectedCameraId={selectedCamera?.id ?? null}
               autoRotateEnabled={autoRotateEnabled}
-              autoRotateSpeed={autoRotateSpeed}
-              markerSize={markerSize}
+              autoRotateSpeed={isOSINTMode ? autoRotateSpeed * 0.5 : autoRotateSpeed}
+              markerSize={isOSINTMode ? markerSize * 0.7 : markerSize}
               cloudsEnabled={cloudsEnabled}
               cloudsOpacity={cloudsOpacity}
               showCountryBorders={showCountryBorders}
-              showNavigationControls={showNavigationControls}
+              showNavigationControls={!isOSINTMode && showNavigationControls}
               viewMode={viewMode}
               onReadyChange={setIsSceneReady}
             />
           </motion.div>
-        </div>
+
+          {/* Globe mini-view overlay when in OSINT mode */}
+          <AnimatePresence>
+            {isOSINTMode && (
+              <>
+                {/* Top gradient overlay */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
+                />
+
+                {/* Header label */}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3, delay: 0.2 }}
+                  className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none"
+                >
+                  <div className="flex items-center gap-1.5 px-2 py-1 bg-black/50 backdrop-blur-sm rounded-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="font-mono text-[9px] uppercase tracking-widest text-white/80">
+                      Live View
+                    </span>
+                  </div>
+                  <div className="px-2 py-1 bg-black/50 backdrop-blur-sm rounded-sm">
+                    <span className="font-mono text-[9px] text-emerald-400">
+                      {filteredCameras.length.toLocaleString()}
+                    </span>
+                  </div>
+                </motion.div>
+
+                {/* Bottom gradient overlay */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-black/40 to-transparent pointer-events-none"
+                />
+              </>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
         {!isSceneReady && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
@@ -1314,193 +1668,203 @@ export default function Index() {
           </div>
         )}
 
-        {/* HUD Panels */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="pointer-events-auto hidden md:block absolute top-24 left-6 bottom-28 z-20 w-[320px]">
-            <div className="space-y-3 h-full overflow-y-auto">
-              {showHudLeftFilters && (
-                <div className="hud-panel corner-accents">
-                  <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-white/80 flex items-center gap-2">
-                      <Star className="w-3 h-3" />
-                      Favorites
-                    </span>
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-white/60">
-                      {favoriteIds.length.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="p-3">
-                    <button
-                      type="button"
-                      onClick={() => setFavoritesOnly((v) => !v)}
-                      className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${favoritesOnly ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                    >
-                      <Star className={`w-4 h-4 ${favoritesOnly ? 'text-yellow-400' : ''}`} />
-                      Favorites Only
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {showHudLeftFilters && (
-                <>
-                  <RegionFilters
-                    regions={regions}
-                    selectedRegions={selectedRegions}
-                    onRegionToggle={handleRegionToggle}
-                  />
-
-                  <QuickFilters
-                    manufacturers={manufacturers}
-                    selectedManufacturers={selectedManufacturers}
-                    onManufacturerToggle={handleManufacturerToggleWithUrl}
-                  />
-                </>
-              )}
-
-              {showHudLeftGeo && (
-                <div className="hud-panel corner-accents">
-                  <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-white/80">
-                      Geo
-                    </span>
-                  </div>
-                  <div className="p-3 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setNearMeEnabled((v) => !v)}
-                      className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${nearMeEnabled ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-                    >
-                      Near me
-                    </button>
-
-                    {nearMeEnabled && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                            Radius
-                          </span>
-                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                            {Math.round(nearRadiusKm)} km
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={5}
-                          max={2000}
-                          step={5}
-                          value={nearRadiusKm}
-                          onChange={(e) => setNearRadiusKm(Number(e.target.value))}
-                          className="w-full"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                          Sort
+        {/* HUD Panels - hidden when OSINT mode is active */}
+        <AnimatePresence>
+          {!isOSINTMode && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+              className="absolute inset-0 pointer-events-none"
+            >
+              <div className="pointer-events-auto hidden md:block absolute top-24 left-6 bottom-28 z-20 w-[320px]">
+                <div className="space-y-3 h-full overflow-y-auto">
+                  {showHudLeftFilters && (
+                    <div className="hud-panel corner-accents">
+                      <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-white/80 flex items-center gap-2">
+                          <Star className="w-3 h-3" />
+                          Favorites
+                        </span>
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-white/60">
+                          {favoriteIds.length.toLocaleString()}
                         </span>
                       </div>
-                      <select
-                        value={sortMode}
-                        onChange={(e) => setSortMode(e.target.value as any)}
-                        className="w-full bg-secondary/20 border border-border/40 rounded-sm px-2 py-2 font-mono text-xs text-foreground"
-                      >
-                        <option value="none">Default</option>
-                        <option value="closest_me">Closest to me</option>
-                        <option value="closest_view">Closest to view</option>
-                        <option value="recent">Recent</option>
-                      </select>
+                      <div className="p-3">
+                        <button
+                          type="button"
+                          onClick={() => setFavoritesOnly((v) => !v)}
+                          className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${favoritesOnly ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                        >
+                          <Star className={`w-4 h-4 ${favoritesOnly ? 'text-yellow-400' : ''}`} />
+                          Favorites Only
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {showHudLeftFilters && (
+                    <>
+                      <RegionFilters
+                        regions={regions}
+                        selectedRegions={selectedRegions}
+                        onRegionToggle={handleRegionToggle}
+                      />
+
+                      <QuickFilters
+                        manufacturers={manufacturers}
+                        selectedManufacturers={selectedManufacturers}
+                        onManufacturerToggle={handleManufacturerToggleWithUrl}
+                      />
+                    </>
+                  )}
+
+                  {showHudLeftGeo && (
+                    <div className="hud-panel corner-accents">
+                      <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-white/80">
+                          Geo
+                        </span>
+                      </div>
+                      <div className="p-3 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => setNearMeEnabled((v) => !v)}
+                          className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${nearMeEnabled ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                        >
+                          Near me
+                        </button>
+
+                        {nearMeEnabled && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                                Radius
+                              </span>
+                              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                                {Math.round(nearRadiusKm)} km
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={5}
+                              max={2000}
+                              step={5}
+                              value={nearRadiusKm}
+                              onChange={(e) => setNearRadiusKm(Number(e.target.value))}
+                              className="w-full"
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                              Sort
+                            </span>
+                          </div>
+                          <select
+                            value={sortMode}
+                            onChange={(e) => setSortMode(e.target.value as any)}
+                            className="w-full bg-secondary/20 border border-border/40 rounded-sm px-2 py-2 font-mono text-xs text-foreground"
+                          >
+                            <option value="none">Default</option>
+                            <option value="closest_me">Closest to me</option>
+                            <option value="closest_view">Closest to view</option>
+                            <option value="recent">Recent</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="pointer-events-auto md:hidden absolute left-3 right-3 top-20 z-30">
-            <Drawer open={isHudOpen} onOpenChange={setIsHudOpen}>
-              <div className="grid grid-cols-3 gap-2">
-                <DrawerTrigger asChild>
-                  <button
-                    type="button"
-                    className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                    aria-label="Open panels"
-                  >
-                    <Layers className="w-4 h-4" />
-                    Panels
-                  </button>
-                </DrawerTrigger>
-
-                <button
-                  type="button"
-                  onClick={handleSearchOpen}
-                  className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                  aria-label="Browse cameras"
-                >
-                  <Search className="w-4 h-4" />
-                  Search
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSettingsOpen}
-                  className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                  aria-label="Open settings"
-                >
-                  <Sliders className="w-4 h-4" />
-                  Settings
-                </button>
               </div>
 
-              <DrawerContent className="border-border/40 bg-background/80 backdrop-blur">
-                <DrawerHeader className="p-4 pb-2 text-left">
-                  <div className="flex items-center justify-between">
-                    <DrawerTitle className="font-mono text-xs uppercase tracking-wider text-white/80">
-                      Panels
-                    </DrawerTitle>
-                    <DrawerClose asChild>
+              <div className="pointer-events-auto md:hidden absolute left-3 right-3 top-20 z-30">
+                <Drawer open={isHudOpen} onOpenChange={setIsHudOpen}>
+                  <div className="grid grid-cols-3 gap-2">
+                    <DrawerTrigger asChild>
                       <button
                         type="button"
-                        className="p-2 rounded-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-                        aria-label="Close panels"
+                        className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                        aria-label="Open panels"
                       >
-                        <X className="w-4 h-4" />
+                        <Layers className="w-4 h-4" />
+                        Panels
                       </button>
-                    </DrawerClose>
+                    </DrawerTrigger>
+
+                    <button
+                      type="button"
+                      onClick={handleSearchOpen}
+                      className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                      aria-label="Browse cameras"
+                    >
+                      <Search className="w-4 h-4" />
+                      Search
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSettingsOpen}
+                      className="hud-panel corner-accents h-12 flex flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                      aria-label="Open settings"
+                    >
+                      <Sliders className="w-4 h-4" />
+                      Settings
+                    </button>
                   </div>
-                </DrawerHeader>
 
-                <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto space-y-3">
-                  <LiveActivityIndicator
-                    online={stats.online}
-                    total={stats.total}
-                  />
+                  <DrawerContent className="border-border/40 bg-background/80 backdrop-blur">
+                    <DrawerHeader className="p-4 pb-2 text-left">
+                      <div className="flex items-center justify-between">
+                        <DrawerTitle className="font-mono text-xs uppercase tracking-wider text-white/80">
+                          Panels
+                        </DrawerTitle>
+                        <DrawerClose asChild>
+                          <button
+                            type="button"
+                            className="p-2 rounded-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                            aria-label="Close panels"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </DrawerClose>
+                      </div>
+                    </DrawerHeader>
 
-                  <StatsDisplay
-                    totalCameras={stats.total}
-                    visibleCameras={filteredCameras.length}
-                    continents={Object.keys(stats.byContinent).length}
-                    countries={Object.keys(stats.byCountry).length}
-                  />
+                    <div className="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[70vh] overflow-y-auto space-y-3">
+                      <LiveActivityIndicator
+                        online={stats.online}
+                        total={stats.total}
+                      />
 
-                  <RegionFilters
-                    regions={regions}
-                    selectedRegions={selectedRegions}
-                    onRegionToggle={handleRegionToggle}
-                  />
+                      <StatsDisplay
+                        totalCameras={stats.total}
+                        visibleCameras={filteredCameras.length}
+                        continents={Object.keys(stats.byContinent).length}
+                        countries={Object.keys(stats.byCountry).length}
+                      />
 
-                  <QuickFilters
-                    manufacturers={manufacturers}
-                    selectedManufacturers={selectedManufacturers}
-                    onManufacturerToggle={handleManufacturerToggleWithUrl}
-                  />
-                </div>
-              </DrawerContent>
-            </Drawer>
-          </div>
-        </div>
+                      <RegionFilters
+                        regions={regions}
+                        selectedRegions={selectedRegions}
+                        onRegionToggle={handleRegionToggle}
+                      />
+
+                      <QuickFilters
+                        manufacturers={manufacturers}
+                        selectedManufacturers={selectedManufacturers}
+                        onManufacturerToggle={handleManufacturerToggleWithUrl}
+                      />
+                    </div>
+                  </DrawerContent>
+                </Drawer>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <CommandSearch
           cameras={allCameras}
