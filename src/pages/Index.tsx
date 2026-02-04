@@ -31,15 +31,101 @@ import { Layers, Search, Sliders, X, Star, Compass } from 'lucide-react';
 const FAVORITES_STORAGE_KEY = 'globecam:favorites';
 const RECENTS_STORAGE_KEY = 'globecam:recents';
 const SETTINGS_STORAGE_KEY = 'globecam:settings';
+const CAMERA_DATA_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const CAMERA_DATA_CACHE_VERSION = 2;
 
-async function fetchCameraData(): Promise<any[]> {
+const CAMERA_DATA_IDB_DB = 'globecam';
+const CAMERA_DATA_IDB_STORE = 'cache';
+const CAMERA_DATA_IDB_KEY = 'camera_data';
+
+type CameraDataCacheRecord = {
+  v: number;
+  ts: number;
+  etag: string | null;
+  data: any[];
+};
+
+function openCameraCacheDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(CAMERA_DATA_IDB_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(CAMERA_DATA_IDB_STORE)) {
+          db.createObjectStore(CAMERA_DATA_IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function readCameraDataCache(): Promise<CameraDataCacheRecord | null> {
+  try {
+    const db = await openCameraCacheDb();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(CAMERA_DATA_IDB_STORE, 'readonly');
+      const store = tx.objectStore(CAMERA_DATA_IDB_STORE);
+      const req = store.get(CAMERA_DATA_IDB_KEY);
+      req.onsuccess = () => {
+        const val = req.result as CameraDataCacheRecord | undefined;
+        if (!val || typeof val !== 'object') return resolve(null);
+        if ((val as any).v !== CAMERA_DATA_CACHE_VERSION) return resolve(null);
+        if (typeof (val as any).ts !== 'number') return resolve(null);
+        if (Date.now() - (val as any).ts > CAMERA_DATA_CACHE_TTL_MS) return resolve(null);
+        if (!Array.isArray((val as any).data)) return resolve(null);
+        resolve(val);
+      };
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+      tx.onabort = () => db.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function writeCameraDataCache(next: CameraDataCacheRecord): Promise<void> {
+  try {
+    const db = await openCameraCacheDb();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(CAMERA_DATA_IDB_STORE, 'readwrite');
+      const store = tx.objectStore(CAMERA_DATA_IDB_STORE);
+      store.put(next, CAMERA_DATA_IDB_KEY);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+      tx.onabort = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch {
+    // ignore
+  }
+}
+
+async function fetchCameraData(etag: string | null): Promise<{ status: 'ok'; data: any[]; etag: string | null } | { status: 'not_modified'; etag: string | null }> {
   const isDev = import.meta.env.DEV;
   const res = await fetch('/camera_data.min.v2.json', {
     cache: isDev ? 'no-store' : 'force-cache',
     headers: {
       Accept: 'application/json',
+      ...(etag ? { 'If-None-Match': etag } : {}),
     },
   });
+  if (res.status === 304) {
+    return { status: 'not_modified', etag: res.headers.get('ETag') ?? etag };
+  }
   if (!res.ok) {
     throw new Error(`Failed to load camera data (${res.status})`);
   }
@@ -47,7 +133,7 @@ async function fetchCameraData(): Promise<any[]> {
   if (!Array.isArray(json)) {
     throw new Error('Camera data JSON is not an array');
   }
-  return json;
+  return { status: 'ok', data: json, etag: res.headers.get('ETag') };
 }
 
 function readStringArrayStorage(key: string): string[] {
@@ -452,20 +538,70 @@ export default function Index() {
   const [cameraDataError, setCameraDataError] = useState<string | null>(null);
 
   useEffect(() => {
+    let canceled = false;
+    if (typeof window === 'undefined') return;
+    readCameraDataCache().then((cached) => {
+      if (canceled) return;
+      if (!cached?.data) return;
+      setCameraDataRaw(cached.data);
+    });
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const abort = new AbortController();
-    fetchCameraData()
-      .then((data) => {
-        if (abort.signal.aborted) return;
-        setCameraDataRaw(data);
-      })
-      .catch((err) => {
-        if (abort.signal.aborted) return;
-        setCameraDataError(err instanceof Error ? err.message : 'Failed to load camera data');
+    let cachedEtag: string | null = null;
+    if (typeof window !== 'undefined') {
+      readCameraDataCache().then((cached) => {
+        cachedEtag = cached?.etag ?? null;
+        fetchCameraData(cachedEtag)
+          .then((res) => {
+            if (abort.signal.aborted) return;
+            if (res.status === 'not_modified') {
+              if (cachedEtag !== (res.etag ?? null)) {
+                readCameraDataCache().then((existing) => {
+                  if (abort.signal.aborted) return;
+                  if (!existing) return;
+                  writeCameraDataCache({ ...existing, etag: res.etag ?? existing.etag });
+                });
+              }
+              return;
+            }
+            void writeCameraDataCache({
+              v: CAMERA_DATA_CACHE_VERSION,
+              ts: Date.now(),
+              etag: res.etag ?? null,
+              data: res.data,
+            });
+            setCameraDataRaw(res.data);
+          })
+          .catch((err) => {
+            if (abort.signal.aborted) return;
+            if (!cameraDataRaw) {
+              setCameraDataError(err instanceof Error ? err.message : 'Failed to load camera data');
+            }
+          });
       });
+    }
+
+    if (typeof window === 'undefined') {
+      fetchCameraData(null)
+        .then((res) => {
+          if (abort.signal.aborted) return;
+          if (res.status === 'ok') setCameraDataRaw(res.data);
+        })
+        .catch((err) => {
+          if (abort.signal.aborted) return;
+          setCameraDataError(err instanceof Error ? err.message : 'Failed to load camera data');
+        });
+    }
+
     return () => {
       abort.abort();
     };
-  }, []);
+  }, [cameraDataRaw]);
 
   // Load and process cameras from JSON
   const allCameras = useMemo(() => {
