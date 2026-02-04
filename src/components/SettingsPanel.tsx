@@ -87,7 +87,7 @@ export function SettingsPanel({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="pointer-events-auto w-full max-w-md"
+              className="pointer-events-auto w-full max-w-md md:max-w-3xl"
             >
               <div className="hud-panel hud-panel-glow corner-accents p-5 max-h-[85vh] overflow-y-auto sm:max-h-none">
                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
@@ -109,10 +109,6 @@ export function SettingsPanel({
 
                 <div className="pt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="space-y-6">
-                    <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      Globe
-                    </div>
-
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
@@ -122,7 +118,10 @@ export function SettingsPanel({
                           Rotate the globe automatically when idle.
                         </p>
                       </div>
-                      <Switch checked={autoRotateEnabled} onCheckedChange={onAutoRotateEnabledChange} />
+                      <Switch
+                        checked={autoRotateEnabled}
+                        onCheckedChange={onAutoRotateEnabledChange}
+                      />
                     </div>
 
                     <div className={cn("space-y-3", !autoRotateEnabled && "opacity-50")}>
@@ -153,7 +152,10 @@ export function SettingsPanel({
                           Toggle OpenStreetMap tiles on/off.
                         </p>
                       </div>
-                      <Switch checked={showOsmTiles} onCheckedChange={onShowOsmTilesChange} />
+                      <Switch
+                        checked={showOsmTiles}
+                        onCheckedChange={onShowOsmTilesChange}
+                      />
                     </div>
 
                     <div className="flex items-start justify-between gap-4">
@@ -165,7 +167,10 @@ export function SettingsPanel({
                           Show country borders overlay on the globe.
                         </p>
                       </div>
-                      <Switch checked={showCountryBorders} onCheckedChange={onShowCountryBordersChange} />
+                      <Switch
+                        checked={showCountryBorders}
+                        onCheckedChange={onShowCountryBordersChange}
+                      />
                     </div>
 
                     <div className="flex items-start justify-between gap-4">
@@ -177,7 +182,10 @@ export function SettingsPanel({
                           Show compass and tilt controls.
                         </p>
                       </div>
-                      <Switch checked={showNavigationControls} onCheckedChange={onShowNavigationControlsChange} />
+                      <Switch
+                        checked={showNavigationControls}
+                        onCheckedChange={onShowNavigationControlsChange}
+                      />
                     </div>
 
                     <div className="space-y-3">
@@ -207,7 +215,10 @@ export function SettingsPanel({
                           Live cloud coverage overlay.
                         </p>
                       </div>
-                      <Switch checked={cloudsEnabled} onCheckedChange={onCloudsEnabledChange} />
+                      <Switch
+                        checked={cloudsEnabled}
+                        onCheckedChange={onCloudsEnabledChange}
+                      />
                     </div>
 
                     <div className={cn("space-y-3", !cloudsEnabled && "opacity-50")}>
@@ -231,24 +242,44 @@ export function SettingsPanel({
                   </div>
 
                   <div className="space-y-6">
-                    <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                      HUD
-                    </div>
-
                     <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          HUD
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        Turn on/off parts of the on-screen UI.
+                      </p>
+
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-3">
                           <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                             Left
                           </div>
 
+                          <p className="text-xs text-muted-foreground">
+                            Panel stack on the left.
+                          </p>
+
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-xs text-muted-foreground">Filters</span>
+                            <div className="flex-1">
+                              <div className="text-xs text-muted-foreground">Filters</div>
+                              <div className="text-[11px] text-muted-foreground/80">
+                                Favorites, regions, manufacturers
+                              </div>
+                            </div>
                             <Switch checked={showHudLeftFilters} onCheckedChange={onShowHudLeftFiltersChange} />
                           </div>
 
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-xs text-muted-foreground">Geo</span>
+                            <div className="flex-1">
+                              <div className="text-xs text-muted-foreground">Geo</div>
+                              <div className="text-[11px] text-muted-foreground/80">
+                                Near me, radius, sorting
+                              </div>
+                            </div>
                             <Switch checked={showHudLeftGeo} onCheckedChange={onShowHudLeftGeoChange} />
                           </div>
                         </div>
@@ -258,18 +289,37 @@ export function SettingsPanel({
                             Right
                           </div>
 
+                          <p className="text-xs text-muted-foreground">
+                            Small floating buttons on the right.
+                          </p>
+
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-xs text-muted-foreground">View toggle</span>
-                            <Switch checked={showHudRightViewToggle} onCheckedChange={onShowHudRightViewToggleChange} />
+                            <div className="flex-1">
+                              <div className="text-xs text-muted-foreground">View toggle</div>
+                              <div className="text-[11px] text-muted-foreground/80">Globe / Map</div>
+                            </div>
+                            <Switch
+                              checked={showHudRightViewToggle}
+                              onCheckedChange={onShowHudRightViewToggleChange}
+                            />
                           </div>
 
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-xs text-muted-foreground">Nav controls</span>
-                            <Switch checked={showHudRightNavControls} onCheckedChange={onShowHudRightNavControlsChange} />
+                            <div className="flex-1">
+                              <div className="text-xs text-muted-foreground">Nav controls</div>
+                              <div className="text-[11px] text-muted-foreground/80">Compass reset</div>
+                            </div>
+                            <Switch
+                              checked={showHudRightNavControls}
+                              onCheckedChange={onShowHudRightNavControlsChange}
+                            />
                           </div>
 
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-xs text-muted-foreground">Footer</span>
+                            <div className="flex-1">
+                              <div className="text-xs text-muted-foreground">Footer bar</div>
+                              <div className="text-[11px] text-muted-foreground/80">Coords, counts, status</div>
+                            </div>
                             <Switch checked={showHudFooter} onCheckedChange={onShowHudFooterChange} />
                           </div>
                         </div>

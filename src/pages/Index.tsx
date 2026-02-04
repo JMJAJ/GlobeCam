@@ -22,10 +22,8 @@ import {
 } from '@/components/ui/drawer';
 import {
   ScanLinesOverlay,
-  GridOverlay,
   VignetteOverlay,
-  CornerDecorations,
-  TechLines
+  CornerDecorations
 } from '@/components/VisualOverlays';
 import { CameraData } from '@/types/camera';
 import { Layers, Search, Sliders, X, Star, Compass } from 'lucide-react';
@@ -1072,8 +1070,6 @@ export default function Index() {
     return (
       <ParallaxProvider>
         <div className="relative w-screen h-screen bg-background overflow-hidden">
-          <GridOverlay />
-          <TechLines />
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
             <div className="hud-panel corner-accents max-w-[520px]">
               <div className="border-b border-panel-border px-4 py-3">
@@ -1094,8 +1090,6 @@ export default function Index() {
   return (
     <ParallaxProvider>
       <div className="relative w-screen h-screen bg-background overflow-hidden">
-        <GridOverlay />
-        <TechLines />
 
         {/* Header */}
         <Header
@@ -1453,31 +1447,33 @@ export default function Index() {
             transition={{ duration: 0.6, delay: 0.8 }}
             className="absolute bottom-0 left-0 right-0 z-20"
           >
-            <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 border-t border-border/30 bg-background/50 backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-3 sm:gap-6">
-                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                  {isSceneReady && viewCenterLonLat
-                    ? `Lon: ${viewCenterLonLat[0].toFixed(2)}° | Lat: ${viewCenterLonLat[1].toFixed(2)}°`
-                    : 'Lon: --.--° | Lat: --.--°'}
-                </span>
-                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                  View: {viewMode === 'map' ? 'Flat Map' : 'Globe'}
-                </span>
-              </div>
+            <div className="px-4 py-3 sm:px-6 border-t border-border/30 bg-background/50 backdrop-blur-sm">
+              <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-6 justify-start">
+                  <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                    {isSceneReady && viewCenterLonLat
+                      ? `Lon: ${viewCenterLonLat[0].toFixed(2)}° | Lat: ${viewCenterLonLat[1].toFixed(2)}°`
+                      : 'Lon: --.--° | Lat: --.--°'}
+                  </span>
+                  <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                    View: {viewMode === 'map' ? 'Flat Map' : 'Globe'}
+                  </span>
+                </div>
 
-              <div className="hidden sm:block flex-1 text-center">
-                <span className="font-mono text-[10px] text-accent uppercase tracking-wider">
-                  {now.toLocaleTimeString(undefined, { hour12: false })}
-                </span>
-              </div>
+                <div className="hidden sm:block text-center">
+                  <span className="font-mono text-[10px] text-accent uppercase tracking-wider">
+                    {now.toLocaleTimeString(undefined, { hour12: false })}
+                  </span>
+                </div>
 
-              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                  Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}
-                </span>
-                <span className={`font-mono text-[10px] uppercase tracking-wider ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                  ● {isConnected ? 'Connected' : 'Disconnected'}
-                </span>
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4 justify-start sm:justify-end">
+                  <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                    Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}
+                  </span>
+                  <span className={`font-mono text-[10px] uppercase tracking-wider ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
+                    ● {isConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                </div>
               </div>
             </div>
           </motion.div>

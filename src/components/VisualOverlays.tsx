@@ -15,10 +15,13 @@ export function GridOverlay() {
   return (
     <motion.div
       initial={{ opacity: 0 }}
-      animate={{ opacity: 0.4 }}
+      animate={{ opacity: 0.35 }}
       transition={{ duration: 1.5 }}
-      className="absolute inset-0 pointer-events-none grid-overlay -z-10"
-    />
+      className="absolute inset-0 pointer-events-none z-[5]"
+    >
+      <div className="absolute inset-0 grid-overlay" />
+      <div className="absolute inset-0 radial-grid" style={{ opacity: 0.12 }} />
+    </motion.div>
   );
 }
 

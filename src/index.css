@@ -118,9 +118,11 @@
   /* Grid overlay */
   .grid-overlay {
     background-image: 
-      linear-gradient(hsl(var(--grid)) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--grid)) 1px, transparent 1px);
-    background-size: 50px 50px;
+      linear-gradient(hsl(var(--grid) / 0.10) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--grid) / 0.10) 1px, transparent 1px),
+      linear-gradient(hsl(var(--grid) / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--grid) / 0.05) 1px, transparent 1px);
+    background-size: 32px 32px, 32px 32px, 8px 8px, 8px 8px;
     opacity: 0.3;
   }
 
