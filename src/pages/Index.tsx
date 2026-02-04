@@ -446,6 +446,7 @@ function computeNetworkKey(cam: any): string | null {
 
 export default function Index() {
   const globeRef = useRef<CesiumGlobeRef | null>(null);
+  const didInitialUrlSync = useRef(false);
   const [navState, setNavState] = useState<{ headingDegrees: number; pitchDegrees: number } | null>(null);
   const [cameraDataRaw, setCameraDataRaw] = useState<any[] | null>(null);
   const [cameraDataError, setCameraDataError] = useState<string | null>(null);
@@ -581,6 +582,13 @@ export default function Index() {
   const [nearMeEnabled, setNearMeEnabled] = useState<boolean>(initialNearEnabled);
   const [nearRadiusKm, setNearRadiusKm] = useState<number>(initialNearRadiusKm);
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+
+  useEffect(() => {
+    if (!initialSelectedCameraId) return;
+    if (selectedCamera?.id === initialSelectedCameraId) return;
+    const cam = allCameras.find((c) => c.id === initialSelectedCameraId) ?? null;
+    if (cam) setSelectedCamera(cam);
+  }, [allCameras, initialSelectedCameraId, selectedCamera?.id]);
 
   useEffect(() => {
     if (!nearMeEnabled) return;
@@ -1007,6 +1015,10 @@ export default function Index() {
   }, [selectedCamera?.id, toggleFavoriteSelected]);
 
   useEffect(() => {
+    if (!didInitialUrlSync.current) {
+      didInitialUrlSync.current = true;
+      return;
+    }
     syncUrl({
       camId: selectedCamera?.id ?? null,
       q: searchQuery,
