@@ -618,9 +618,20 @@ export default function Index() {
     }
 
     let raf = 0;
+    let lastUpdate = 0;
+    let lastSerialized: string | null = null;
     const tick = () => {
-      const next = globeRef.current?.getNavigationState() ?? null;
-      setNavState(next);
+      const t = performance.now();
+      const minIntervalMs = window.matchMedia?.('(pointer: coarse)')?.matches ? 120 : 50;
+      if (t - lastUpdate >= minIntervalMs) {
+        lastUpdate = t;
+        const next = globeRef.current?.getNavigationState() ?? null;
+        const serialized = next ? JSON.stringify(next) : null;
+        if (serialized !== lastSerialized) {
+          lastSerialized = serialized;
+          setNavState(next);
+        }
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -636,6 +647,8 @@ export default function Index() {
     }
 
     let raf = 0;
+    let lastUpdate = 0;
+    let last: [number, number] | null = null;
     const tick = () => {
       try {
         const viewer = globeRef.current?.getViewer?.();
@@ -651,7 +664,16 @@ export default function Index() {
           const lon = CesiumMath.toDegrees(carto.longitude);
           const lat = CesiumMath.toDegrees(carto.latitude);
           if (Number.isFinite(lon) && Number.isFinite(lat)) {
-            setViewCenterLonLat([lon, lat]);
+            const t = performance.now();
+            const minIntervalMs = window.matchMedia?.('(pointer: coarse)')?.matches ? 200 : 80;
+            if (t - lastUpdate >= minIntervalMs) {
+              lastUpdate = t;
+              const next: [number, number] = [lon, lat];
+              if (!last || Math.abs(last[0] - next[0]) > 1e-4 || Math.abs(last[1] - next[1]) > 1e-4) {
+                last = next;
+                setViewCenterLonLat(next);
+              }
+            }
           }
         }
       } catch {
