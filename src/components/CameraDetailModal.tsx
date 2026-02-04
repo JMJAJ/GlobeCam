@@ -10,6 +10,7 @@ interface CameraDetailModalProps {
   onToggleFavorite?: () => void;
   isFavorite?: boolean;
   onCopyShareLink?: () => void;
+  onDidCopy?: (label: string) => void;
 }
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
@@ -27,7 +28,7 @@ function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: num
   return R * c;
 }
 
-export function CameraDetailModal({ camera, allCameras, onClose, onSelectCamera, onToggleFavorite, isFavorite, onCopyShareLink }: CameraDetailModalProps) {
+export function CameraDetailModal({ camera, allCameras, onClose, onSelectCamera, onToggleFavorite, isFavorite, onCopyShareLink, onDidCopy }: CameraDetailModalProps) {
   if (!camera) return null;
 
   const relatedCameras = (() => {
@@ -201,6 +202,7 @@ export function CameraDetailModal({ camera, allCameras, onClose, onSelectCamera,
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(camera.image_url);
+                          onDidCopy?.('Preview URL');
                         } catch {
                           // ignore
                         }
@@ -218,6 +220,7 @@ export function CameraDetailModal({ camera, allCameras, onClose, onSelectCamera,
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(camera.page_url);
+                          onDidCopy?.('Source URL');
                         } catch {
                           // ignore
                         }

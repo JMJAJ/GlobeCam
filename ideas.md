@@ -4,7 +4,7 @@ This is a Markdown version of `ideas.txt`, updated to reflect what is currently 
 
 Legend:
 - `[x]` completed
-- `[ ] not started
+- `[ ]` not started
 - `partial` = in progress / partially implemented (not a native checkbox state; noted inline)
 
 ---

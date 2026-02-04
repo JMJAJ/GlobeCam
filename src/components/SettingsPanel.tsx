@@ -14,6 +14,11 @@ interface SettingsPanelProps {
   cloudsOpacity: number;
   showCountryBorders: boolean;
   showNavigationControls: boolean;
+  showHudLeftFilters: boolean;
+  showHudLeftGeo: boolean;
+  showHudRightViewToggle: boolean;
+  showHudRightNavControls: boolean;
+  showHudFooter: boolean;
   onClose: () => void;
   onAutoRotateEnabledChange: (enabled: boolean) => void;
   onAutoRotateSpeedChange: (speed: number) => void;
@@ -23,6 +28,11 @@ interface SettingsPanelProps {
   onCloudsOpacityChange: (opacity: number) => void;
   onShowCountryBordersChange: (show: boolean) => void;
   onShowNavigationControlsChange: (show: boolean) => void;
+  onShowHudLeftFiltersChange: (show: boolean) => void;
+  onShowHudLeftGeoChange: (show: boolean) => void;
+  onShowHudRightViewToggleChange: (show: boolean) => void;
+  onShowHudRightNavControlsChange: (show: boolean) => void;
+  onShowHudFooterChange: (show: boolean) => void;
 }
 
 export function SettingsPanel({
@@ -35,6 +45,11 @@ export function SettingsPanel({
   cloudsOpacity,
   showCountryBorders,
   showNavigationControls,
+  showHudLeftFilters,
+  showHudLeftGeo,
+  showHudRightViewToggle,
+  showHudRightNavControls,
+  showHudFooter,
   onClose,
   onAutoRotateEnabledChange,
   onAutoRotateSpeedChange,
@@ -44,6 +59,11 @@ export function SettingsPanel({
   onCloudsOpacityChange,
   onShowCountryBordersChange,
   onShowNavigationControlsChange,
+  onShowHudLeftFiltersChange,
+  onShowHudLeftGeoChange,
+  onShowHudRightViewToggleChange,
+  onShowHudRightNavControlsChange,
+  onShowHudFooterChange,
 }: SettingsPanelProps) {
   const speedLabel = `${autoRotateSpeed.toFixed(2)}°/s`;
   const markerSizeLabel = `${markerSize.toFixed(2)}x`;
@@ -87,136 +107,174 @@ export function SettingsPanel({
                   </button>
                 </div>
 
-                <div className="pt-4 space-y-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Auto-rotation
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Rotate the globe automatically when idle.
-                      </p>
+                <div className="pt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-6">
+                    <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      Globe
                     </div>
-                    <Switch
-                      checked={autoRotateEnabled}
-                      onCheckedChange={onAutoRotateEnabledChange}
-                    />
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Auto-rotation
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Rotate the globe automatically when idle.
+                        </p>
+                      </div>
+                      <Switch checked={autoRotateEnabled} onCheckedChange={onAutoRotateEnabledChange} />
+                    </div>
+
+                    <div className={cn("space-y-3", !autoRotateEnabled && "opacity-50")}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Speed
+                        </span>
+                        <span className="font-mono text-xs text-foreground">
+                          {speedLabel}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[autoRotateSpeed]}
+                        min={0.05}
+                        max={10}
+                        step={0.05}
+                        onValueChange={(value) => onAutoRotateSpeedChange(value[0])}
+                        disabled={!autoRotateEnabled}
+                      />
+                    </div>
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          OSM tiles
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Toggle OpenStreetMap tiles on/off.
+                        </p>
+                      </div>
+                      <Switch checked={showOsmTiles} onCheckedChange={onShowOsmTilesChange} />
+                    </div>
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Country borders
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Show country borders overlay on the globe.
+                        </p>
+                      </div>
+                      <Switch checked={showCountryBorders} onCheckedChange={onShowCountryBordersChange} />
+                    </div>
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Heading & tilt controls
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Show compass and tilt controls.
+                        </p>
+                      </div>
+                      <Switch checked={showNavigationControls} onCheckedChange={onShowNavigationControlsChange} />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Marker size
+                        </span>
+                        <span className="font-mono text-xs text-foreground">
+                          {markerSizeLabel}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[markerSize]}
+                        min={0.6}
+                        max={2.5}
+                        step={0.05}
+                        onValueChange={(value) => onMarkerSizeChange(value[0])}
+                      />
+                    </div>
+
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Clouds
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Live cloud coverage overlay.
+                        </p>
+                      </div>
+                      <Switch checked={cloudsEnabled} onCheckedChange={onCloudsEnabledChange} />
+                    </div>
+
+                    <div className={cn("space-y-3", !cloudsEnabled && "opacity-50")}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                          Clouds opacity
+                        </span>
+                        <span className="font-mono text-xs text-foreground">
+                          {cloudsLabel}
+                        </span>
+                      </div>
+                      <Slider
+                        value={[cloudsOpacity]}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        onValueChange={(value) => onCloudsOpacityChange(value[0])}
+                        disabled={!cloudsEnabled}
+                      />
+                    </div>
                   </div>
 
-                  <div className={cn("space-y-3", !autoRotateEnabled && "opacity-50")}>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Speed
-                      </span>
-                      <span className="font-mono text-xs text-foreground">
-                        {speedLabel}
-                      </span>
+                  <div className="space-y-6">
+                    <div className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      HUD
                     </div>
-                    <Slider
-                      value={[autoRotateSpeed]}
-                      min={0.05}
-                      max={10}
-                      step={0.05}
-                      onValueChange={(value) => onAutoRotateSpeedChange(value[0])}
-                      disabled={!autoRotateEnabled}
-                    />
-                  </div>
 
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        OSM tiles
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Toggle OpenStreetMap tiles on/off.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={showOsmTiles}
-                      onCheckedChange={onShowOsmTilesChange}
-                    />
-                  </div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-3">
+                          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Left
+                          </div>
 
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Country borders
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Show country borders overlay on the globe.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={showCountryBorders}
-                      onCheckedChange={onShowCountryBordersChange}
-                    />
-                  </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs text-muted-foreground">Filters</span>
+                            <Switch checked={showHudLeftFilters} onCheckedChange={onShowHudLeftFiltersChange} />
+                          </div>
 
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Heading & tilt controls
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Show compass and tilt controls.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={showNavigationControls}
-                      onCheckedChange={onShowNavigationControlsChange}
-                    />
-                  </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs text-muted-foreground">Geo</span>
+                            <Switch checked={showHudLeftGeo} onCheckedChange={onShowHudLeftGeoChange} />
+                          </div>
+                        </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Marker size
-                      </span>
-                      <span className="font-mono text-xs text-foreground">
-                        {markerSizeLabel}
-                      </span>
-                    </div>
-                    <Slider
-                      value={[markerSize]}
-                      min={0.6}
-                      max={2.5}
-                      step={0.05}
-                      onValueChange={(value) => onMarkerSizeChange(value[0])}
-                    />
-                  </div>
+                        <div className="space-y-3">
+                          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Right
+                          </div>
 
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Clouds
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Live cloud coverage overlay.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={cloudsEnabled}
-                      onCheckedChange={onCloudsEnabledChange}
-                    />
-                  </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs text-muted-foreground">View toggle</span>
+                            <Switch checked={showHudRightViewToggle} onCheckedChange={onShowHudRightViewToggleChange} />
+                          </div>
 
-                  <div className={cn("space-y-3", !cloudsEnabled && "opacity-50")}>
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                        Clouds opacity
-                      </span>
-                      <span className="font-mono text-xs text-foreground">
-                        {cloudsLabel}
-                      </span>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs text-muted-foreground">Nav controls</span>
+                            <Switch checked={showHudRightNavControls} onCheckedChange={onShowHudRightNavControlsChange} />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-xs text-muted-foreground">Footer</span>
+                            <Switch checked={showHudFooter} onCheckedChange={onShowHudFooterChange} />
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <Slider
-                      value={[cloudsOpacity]}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      onValueChange={(value) => onCloudsOpacityChange(value[0])}
-                      disabled={!cloudsEnabled}
-                    />
                   </div>
                 </div>
               </div>

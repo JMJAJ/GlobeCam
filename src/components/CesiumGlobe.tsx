@@ -41,6 +41,7 @@ export interface CesiumGlobeRef {
   tiltToTopDown: () => void;
   rotateByDegrees: (degrees: number) => void;
   getNavigationState: () => { headingDegrees: number; pitchDegrees: number } | null;
+  getViewer: () => Viewer | null;
 }
 
 export const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(function CesiumGlobe(
@@ -133,6 +134,7 @@ export const CesiumGlobe = forwardRef<CesiumGlobeRef, CesiumGlobeProps>(function
           return null;
         }
       },
+      getViewer: () => viewerRef.current,
     }),
     [viewMode]
   );

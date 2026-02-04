@@ -9,7 +9,9 @@ import { QuickFilters } from '@/components/QuickFilters';
 import { RegionFilters } from '@/components/RegionFilters';
 import { CommandSearch } from '@/components/CommandSearch';
 import { CameraDetailModal } from '@/components/CameraDetailModal';
+import { toast } from '@/components/ui/sonner';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { Cartesian2, Math as CesiumMath } from 'cesium';
 import {
   Drawer,
   DrawerClose,
@@ -99,6 +101,35 @@ function parseCsvParam(value: string | null): string[] {
 
 function serializeCsvParam(values: string[]): string {
   return values.map((v) => encodeURIComponent(v)).join(',');
+}
+
+function parseBoolParam(value: string | null): boolean | null {
+  if (value === null) return null;
+  const v = value.trim().toLowerCase();
+  if (v === '1' || v === 'true' || v === 'yes' || v === 'on') return true;
+  if (v === '0' || v === 'false' || v === 'no' || v === 'off') return false;
+  return null;
+}
+
+function parseNumberParam(value: string | null): number | null {
+  if (value === null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+  const h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
 }
 
 // Helper function to determine continent from country
@@ -479,6 +510,21 @@ export default function Index() {
     return initialQueryParams?.get('cam') ?? null;
   }, [initialQueryParams]);
 
+  const initialSortMode = useMemo(() => {
+    const raw = initialQueryParams?.get('sort') ?? null;
+    if (raw === 'closest_me' || raw === 'closest_view' || raw === 'recent') return raw;
+    return 'none';
+  }, [initialQueryParams]);
+
+  const initialNearEnabled = useMemo(() => {
+    return parseBoolParam(initialQueryParams?.get('near') ?? null) ?? false;
+  }, [initialQueryParams]);
+
+  const initialNearRadiusKm = useMemo(() => {
+    const v = parseNumberParam(initialQueryParams?.get('radius') ?? null);
+    return typeof v === 'number' ? Math.max(1, Math.min(20000, v)) : 250;
+  }, [initialQueryParams]);
+
   const stats = useMemo(() => getCameraStats(allCameras), [allCameras]);
   const maxVisibleNodesMax = Math.max(500, Math.min(5000, allCameras.length));
 
@@ -493,7 +539,8 @@ export default function Index() {
     return allCameras.find((c) => c.id === initialSelectedCameraId) ?? null;
   });
   const [selectedManufacturers, setSelectedManufacturers] = useState<string[]>(initialSelectedManufacturers);
-  const [currentRotation, setCurrentRotation] = useState<[number, number]>([0, 0]);
+  const [currentRotation, setCurrentRotation] = useState<[number, number] | null>(null);
+  const [viewCenterLonLat, setViewCenterLonLat] = useState<[number, number] | null>(null);
   const [currentProgress, setCurrentProgress] = useState(100);
   const [fps, setFps] = useState(60);
   const [isConnected, setIsConnected] = useState(true);
@@ -521,9 +568,48 @@ export default function Index() {
   });
   const [showCountryBorders, setShowCountryBorders] = useState(() => persistedSettings?.showCountryBorders ?? false);
   const [showNavigationControls, setShowNavigationControls] = useState(() => persistedSettings?.showNavigationControls ?? false);
+  const [showHudLeftFilters, setShowHudLeftFilters] = useState(() => persistedSettings?.showHudLeftFilters ?? true);
+  const [showHudLeftGeo, setShowHudLeftGeo] = useState(() => persistedSettings?.showHudLeftGeo ?? true);
+  const [showHudRightViewToggle, setShowHudRightViewToggle] = useState(() => persistedSettings?.showHudRightViewToggle ?? true);
+  const [showHudRightNavControls, setShowHudRightNavControls] = useState(() => persistedSettings?.showHudRightNavControls ?? true);
+  const [showHudFooter, setShowHudFooter] = useState(() => persistedSettings?.showHudFooter ?? true);
   const [viewMode, setViewMode] = useState<'globe' | 'map'>(() => persistedSettings?.viewMode ?? 'globe');
   const [isSceneReady, setIsSceneReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  const [sortMode, setSortMode] = useState<'none' | 'closest_me' | 'closest_view' | 'recent'>(
+    initialSortMode as any
+  );
+  const [nearMeEnabled, setNearMeEnabled] = useState<boolean>(initialNearEnabled);
+  const [nearRadiusKm, setNearRadiusKm] = useState<number>(initialNearRadiusKm);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
+
+  useEffect(() => {
+    if (!nearMeEnabled) return;
+    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+      toast.error('Geolocation is not supported in this browser');
+      setNearMeEnabled(false);
+      return;
+    }
+
+    let canceled = false;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (canceled) return;
+        setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      () => {
+        if (canceled) return;
+        setUserLocation(null);
+        toast.error('Unable to access your location');
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 }
+    );
+
+    return () => {
+      canceled = true;
+    };
+  }, [nearMeEnabled]);
 
   useEffect(() => {
     if (!showNavigationControls) {
@@ -542,6 +628,43 @@ export default function Index() {
       if (raf) cancelAnimationFrame(raf);
     };
   }, [showNavigationControls]);
+
+  useEffect(() => {
+    if (viewMode !== 'globe') {
+      setViewCenterLonLat(null);
+      return;
+    }
+
+    let raf = 0;
+    const tick = () => {
+      try {
+        const viewer = globeRef.current?.getViewer?.();
+        if (!viewer) return;
+        if ((viewer as any).isDestroyed?.()) return;
+        const scene = viewer.scene;
+        const canvas = scene.canvas;
+        const center = new Cartesian2(canvas.clientWidth / 2, canvas.clientHeight / 2);
+        const p = viewer.camera.pickEllipsoid(center, scene.globe.ellipsoid);
+
+        if (p) {
+          const carto = scene.globe.ellipsoid.cartesianToCartographic(p);
+          const lon = CesiumMath.toDegrees(carto.longitude);
+          const lat = CesiumMath.toDegrees(carto.latitude);
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            setViewCenterLonLat([lon, lat]);
+          }
+        }
+      } catch {
+        // ignore
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [viewMode]);
 
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -576,6 +699,9 @@ export default function Index() {
       q: string;
       regions: string[];
       mfr: string[];
+      sort: 'none' | 'closest_me' | 'closest_view' | 'recent';
+      near: boolean;
+      radiusKm: number;
     }) => {
       if (typeof window === 'undefined') return;
       const params = new URLSearchParams(window.location.search);
@@ -591,6 +717,15 @@ export default function Index() {
 
       if (next.mfr.length > 0) params.set('mfr', serializeCsvParam(next.mfr));
       else params.delete('mfr');
+
+      if (next.sort !== 'none') params.set('sort', next.sort);
+      else params.delete('sort');
+
+      if (next.near) params.set('near', '1');
+      else params.delete('near');
+
+      if (next.near) params.set('radius', String(Math.round(next.radiusKm)));
+      else params.delete('radius');
 
       const qs = params.toString();
       const url = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`;
@@ -640,15 +775,67 @@ export default function Index() {
       });
     }
 
+    const viewCenter = viewCenterLonLat
+      ? { lat: viewCenterLonLat[1], lon: viewCenterLonLat[0] }
+      : { lat: 0, lon: 0 };
+
+    if (nearMeEnabled && userLocation) {
+      filtered = filtered.filter((cam) => {
+        const d = haversineKm(userLocation, { lat: cam.latitude, lon: cam.longitude });
+        return d <= nearRadiusKm;
+      });
+    }
+
+    if (sortMode !== 'none') {
+      const recentIndex = new Map<string, number>();
+      recentIds.forEach((id, idx) => recentIndex.set(id, idx));
+
+      filtered = [...filtered].sort((a, b) => {
+        if (sortMode === 'closest_me') {
+          if (!userLocation) return 0;
+          const da = haversineKm(userLocation, { lat: a.latitude, lon: a.longitude });
+          const db = haversineKm(userLocation, { lat: b.latitude, lon: b.longitude });
+          return da - db;
+        }
+        if (sortMode === 'closest_view') {
+          if (!viewCenterLonLat) return 0;
+          const da = haversineKm(viewCenter, { lat: a.latitude, lon: a.longitude });
+          const db = haversineKm(viewCenter, { lat: b.latitude, lon: b.longitude });
+          return da - db;
+        }
+        if (sortMode === 'recent') {
+          const ra = a.id ? (recentIndex.get(a.id) ?? 999999) : 999999;
+          const rb = b.id ? (recentIndex.get(b.id) ?? 999999) : 999999;
+          return ra - rb;
+        }
+        return 0;
+      });
+    }
+
     return filtered;
-  }, [allCameras, favoriteIds, favoritesOnly, selectedRegions, selectedManufacturers, searchQuery]);
+  }, [
+    allCameras,
+    currentRotation,
+    favoriteIds,
+    favoritesOnly,
+    nearMeEnabled,
+    nearRadiusKm,
+    recentIds,
+    searchQuery,
+    selectedManufacturers,
+    selectedRegions,
+    sortMode,
+    userLocation,
+  ]);
 
   const handleCopyShareLink = useCallback(async () => {
     if (typeof window === 'undefined') return;
     try {
       await navigator.clipboard.writeText(window.location.href);
+      toast.success('Share link copied');
     } catch {
       // ignore
+      toast.error('Failed to copy link');
     }
   }, []);
 
@@ -667,10 +854,13 @@ export default function Index() {
         q: searchQuery,
         regions: next,
         mfr: selectedManufacturers,
+        sort: sortMode,
+        near: nearMeEnabled,
+        radiusKm: nearRadiusKm,
       });
       return next;
     });
-  }, [searchQuery, selectedCamera?.id, selectedManufacturers, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, searchQuery, selectedCamera?.id, selectedManufacturers, sortMode, syncUrl]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -679,8 +869,11 @@ export default function Index() {
       q: query,
       regions: selectedRegions,
       mfr: selectedManufacturers,
+      sort: sortMode,
+      near: nearMeEnabled,
+      radiusKm: nearRadiusKm,
     });
-  }, [selectedCamera?.id, selectedManufacturers, selectedRegions, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, selectedCamera?.id, selectedManufacturers, selectedRegions, sortMode, syncUrl]);
 
   const handleCameraSelect = useCallback((camera: CameraData | null) => {
     setSelectedCamera(camera);
@@ -697,8 +890,11 @@ export default function Index() {
       q: searchQuery,
       regions: selectedRegions,
       mfr: selectedManufacturers,
+      sort: sortMode,
+      near: nearMeEnabled,
+      radiusKm: nearRadiusKm,
     });
-  }, [searchQuery, selectedManufacturers, selectedRegions, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, searchQuery, selectedManufacturers, selectedRegions, sortMode, syncUrl]);
 
   const handleCloseModal = useCallback(() => {
     setSelectedCamera(null);
@@ -707,8 +903,11 @@ export default function Index() {
       q: searchQuery,
       regions: selectedRegions,
       mfr: selectedManufacturers,
+      sort: sortMode,
+      near: nearMeEnabled,
+      radiusKm: nearRadiusKm,
     });
-  }, [searchQuery, selectedManufacturers, selectedRegions, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, searchQuery, selectedManufacturers, selectedRegions, sortMode, syncUrl]);
 
   const handleManufacturerToggleWithUrl = useCallback((manufacturer: string) => {
     setSelectedManufacturers((prev) => {
@@ -718,10 +917,13 @@ export default function Index() {
         q: searchQuery,
         regions: selectedRegions,
         mfr: next,
+        sort: sortMode,
+        near: nearMeEnabled,
+        radiusKm: nearRadiusKm,
       });
       return next;
     });
-  }, [searchQuery, selectedCamera?.id, selectedRegions, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, searchQuery, selectedCamera?.id, selectedRegions, sortMode, syncUrl]);
 
 
 
@@ -750,8 +952,11 @@ export default function Index() {
       q: region,
       regions: selectedRegions,
       mfr: selectedManufacturers,
+      sort: sortMode,
+      near: nearMeEnabled,
+      radiusKm: nearRadiusKm,
     });
-  }, [selectedCamera?.id, selectedManufacturers, selectedRegions, syncUrl]);
+  }, [nearMeEnabled, nearRadiusKm, selectedCamera?.id, selectedManufacturers, selectedRegions, sortMode, syncUrl]);
 
   // Convenience shortcuts (when a camera is selected):
   // - Ctrl/Cmd+Shift+C copies the current URL (share link)
@@ -782,6 +987,18 @@ export default function Index() {
   }, [selectedCamera?.id, toggleFavoriteSelected]);
 
   useEffect(() => {
+    syncUrl({
+      camId: selectedCamera?.id ?? null,
+      q: searchQuery,
+      regions: selectedRegions,
+      mfr: selectedManufacturers,
+      sort: sortMode,
+      near: nearMeEnabled,
+      radiusKm: nearRadiusKm,
+    });
+  }, [nearMeEnabled, nearRadiusKm, searchQuery, selectedCamera?.id, selectedManufacturers, selectedRegions, sortMode, syncUrl]);
+
+  useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
@@ -801,6 +1018,11 @@ export default function Index() {
       cloudsOpacity,
       showCountryBorders,
       showNavigationControls,
+      showHudLeftFilters,
+      showHudLeftGeo,
+      showHudRightViewToggle,
+      showHudRightNavControls,
+      showHudFooter,
       viewMode,
     });
   }, [
@@ -816,6 +1038,11 @@ export default function Index() {
     cloudsOpacity,
     showCountryBorders,
     showNavigationControls,
+    showHudLeftFilters,
+    showHudLeftGeo,
+    showHudRightViewToggle,
+    showHudRightNavControls,
+    showHudFooter,
     viewMode,
   ]);
 
@@ -927,6 +1154,7 @@ export default function Index() {
         <div className="absolute inset-0 pointer-events-none">
           <div className="pointer-events-auto hidden md:block absolute top-24 left-6 bottom-28 z-20 w-[320px]">
             <div className="space-y-3 h-full overflow-y-auto">
+              {showHudLeftFilters && (
                 <div className="hud-panel corner-accents">
                   <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
                     <span className="font-mono text-[10px] uppercase tracking-widest text-white/80 flex items-center gap-2">
@@ -948,18 +1176,82 @@ export default function Index() {
                     </button>
                   </div>
                 </div>
+              )}
 
-                <RegionFilters
-                  regions={regions}
-                  selectedRegions={selectedRegions}
-                  onRegionToggle={handleRegionToggle}
-                />
+              {showHudLeftFilters && (
+                <>
+                  <RegionFilters
+                    regions={regions}
+                    selectedRegions={selectedRegions}
+                    onRegionToggle={handleRegionToggle}
+                  />
 
-                <QuickFilters
-                  manufacturers={manufacturers}
-                  selectedManufacturers={selectedManufacturers}
-                  onManufacturerToggle={handleManufacturerToggleWithUrl}
-                />
+                  <QuickFilters
+                    manufacturers={manufacturers}
+                    selectedManufacturers={selectedManufacturers}
+                    onManufacturerToggle={handleManufacturerToggleWithUrl}
+                  />
+                </>
+              )}
+
+              {showHudLeftGeo && (
+                <div className="hud-panel corner-accents">
+                  <div className="border-b border-panel-border px-4 py-2 flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-white/80">
+                      Geo
+                    </span>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setNearMeEnabled((v) => !v)}
+                      className={`w-full hud-panel corner-accents flex items-center justify-center gap-2 px-3 py-2 font-mono text-xs uppercase tracking-wider transition-colors ${nearMeEnabled ? 'text-foreground hover:bg-secondary/50' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                    >
+                      Near me
+                    </button>
+
+                    {nearMeEnabled && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Radius
+                          </span>
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {Math.round(nearRadiusKm)} km
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={5}
+                          max={2000}
+                          step={5}
+                          value={nearRadiusKm}
+                          onChange={(e) => setNearRadiusKm(Number(e.target.value))}
+                          className="w-full"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Sort
+                        </span>
+                      </div>
+                      <select
+                        value={sortMode}
+                        onChange={(e) => setSortMode(e.target.value as any)}
+                        className="w-full bg-secondary/20 border border-border/40 rounded-sm px-2 py-2 font-mono text-xs text-foreground"
+                      >
+                        <option value="none">Default</option>
+                        <option value="closest_me">Closest to me</option>
+                        <option value="closest_view">Closest to view</option>
+                        <option value="recent">Recent</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1067,6 +1359,11 @@ export default function Index() {
           cloudsOpacity={cloudsOpacity}
           showCountryBorders={showCountryBorders}
           showNavigationControls={showNavigationControls}
+          showHudLeftFilters={showHudLeftFilters}
+          showHudLeftGeo={showHudLeftGeo}
+          showHudRightViewToggle={showHudRightViewToggle}
+          showHudRightNavControls={showHudRightNavControls}
+          showHudFooter={showHudFooter}
           onClose={handleSettingsClose}
           onAutoRotateEnabledChange={setAutoRotateEnabled}
           onAutoRotateSpeedChange={setAutoRotateSpeed}
@@ -1076,6 +1373,11 @@ export default function Index() {
           onCloudsOpacityChange={setCloudsOpacity}
           onShowCountryBordersChange={setShowCountryBorders}
           onShowNavigationControlsChange={setShowNavigationControls}
+          onShowHudLeftFiltersChange={setShowHudLeftFilters}
+          onShowHudLeftGeoChange={setShowHudLeftGeo}
+          onShowHudRightViewToggleChange={setShowHudRightViewToggle}
+          onShowHudRightNavControlsChange={setShowHudRightNavControls}
+          onShowHudFooterChange={setShowHudFooter}
         />
 
         {/* Overlays */}
@@ -1083,7 +1385,7 @@ export default function Index() {
         <ScanLinesOverlay />
         <VignetteOverlay />
 
-        {isSceneReady && (
+        {isSceneReady && showHudRightViewToggle && (
           <div className="hidden sm:block absolute right-6 bottom-16 z-30">
             <button
               type="button"
@@ -1096,7 +1398,7 @@ export default function Index() {
           </div>
         )}
 
-        {isSceneReady && showNavigationControls && navState && viewMode === 'globe' && (() => {
+        {isSceneReady && showHudRightNavControls && showNavigationControls && navState && viewMode === 'globe' && (() => {
           const heading = ((navState.headingDegrees % 360) + 360) % 360;
           return (
             <div className="hidden sm:block absolute right-6 bottom-28 z-50">
@@ -1122,38 +1424,42 @@ export default function Index() {
         })()}
 
         {/* Footer status bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.8 }}
-          className="absolute bottom-0 left-0 right-0 z-20"
-        >
-          <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 border-t border-border/30 bg-background/50 backdrop-blur-sm">
-            <div className="flex flex-wrap items-center gap-3 sm:gap-6">
-              <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                Lon: {currentRotation[0].toFixed(2)}° | Lat: {currentRotation[1].toFixed(2)}°
-              </span>
-              <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                View: {viewMode === 'map' ? 'Flat Map' : 'Globe'}
-              </span>
-            </div>
+        {showHudFooter && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.8 }}
+            className="absolute bottom-0 left-0 right-0 z-20"
+          >
+            <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 border-t border-border/30 bg-background/50 backdrop-blur-sm">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                  {isSceneReady && viewCenterLonLat
+                    ? `Lon: ${viewCenterLonLat[0].toFixed(2)}° | Lat: ${viewCenterLonLat[1].toFixed(2)}°`
+                    : 'Lon: --.--° | Lat: --.--°'}
+                </span>
+                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                  View: {viewMode === 'map' ? 'Flat Map' : 'Globe'}
+                </span>
+              </div>
 
-            <div className="hidden sm:block flex-1 text-center">
-              <span className="font-mono text-[10px] text-accent uppercase tracking-wider">
-                {now.toLocaleTimeString(undefined, { hour12: false })}
-              </span>
-            </div>
+              <div className="hidden sm:block flex-1 text-center">
+                <span className="font-mono text-[10px] text-accent uppercase tracking-wider">
+                  {now.toLocaleTimeString(undefined, { hour12: false })}
+                </span>
+              </div>
 
-            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-              <span className="font-mono text-[10px] text-white uppercase tracking-wider">
-                Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}
-              </span>
-              <span className={`font-mono text-[10px] uppercase tracking-wider ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-                ● {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <span className="font-mono text-[10px] text-white uppercase tracking-wider">
+                  Cameras: {filteredCameras.length.toLocaleString()} / {stats.total.toLocaleString()}
+                </span>
+                <span className={`font-mono text-[10px] uppercase tracking-wider ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  ● {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
 
         {/* Camera Detail Modal */}
         <CameraDetailModal
@@ -1164,6 +1470,7 @@ export default function Index() {
           onToggleFavorite={toggleFavoriteSelected}
           isFavorite={isSelectedFavorite}
           onCopyShareLink={handleCopyShareLink}
+          onDidCopy={(label) => toast.success(`${label} copied`)}
         />
       </div>
     </ParallaxProvider>
